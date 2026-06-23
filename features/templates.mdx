@@ -79,7 +79,8 @@ curl -X POST https://api.wraft.com/api/v1/content_types/:c_type_id/data_template
     Retrieve all templates under a specific Content Type. Supports pagination, title filtering, and sorting.
 
     ```bash cURL
-    GET /api/v1/content_types/:c_type_id/data_templates?page=1&title=NDA&sort=inserted_at_desc
+    curl https://api.wraft.com/api/v1/content_types/:c_type_id/data_templates?page=1&title=NDA&sort=inserted_at_desc \
+      -H "Authorization: Bearer <token>"
     ```
 
     **Sort keys:** `inserted_at`, `inserted_at_desc`, `updated_at`, `updated_at_desc`
@@ -88,7 +89,8 @@ curl -X POST https://api.wraft.com/api/v1/content_types/:c_type_id/data_template
     Retrieve all templates across every Content Type in your organisation.
 
     ```bash cURL
-    GET /api/v1/data_templates?page=1&title=NDA
+    curl https://api.wraft.com/api/v1/data_templates?page=1&title=NDA \
+      -H "Authorization: Bearer <token>"
     ```
   </Tab>
 </Tabs>
@@ -156,8 +158,8 @@ Template Assets are organisation-level, portable template packages (ZIP files) t
 | `POST /api/v1/template_assets` | Upload a new template asset (ZIP file) |
 | `GET /api/v1/template_assets/:id` | Show a single template asset |
 | `DELETE /api/v1/template_assets/:id` | Delete a template asset |
-| `GET /api/v1/template_assets/public` | List all publicly available templates |
-| `GET /api/v1/template_assets/:id/download` | Get a pre-signed URL to download a public template |
+| `GET /api/v1/template_assets/public/templates` | List all publicly available templates (no auth required) |
+| `GET /api/v1/template_assets/public/templates/:file_name/download` | Download a specific public template by filename (no auth required) |
 
 <Tip>
   Use `POST /api/v1/template_assets/:id/import` to instantiate a Template Asset into your organisation, creating the Content Type, Layout, Theme, and Data Template in one step.

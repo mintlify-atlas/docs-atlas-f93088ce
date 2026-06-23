@@ -21,25 +21,35 @@ http://localhost:4000/api/v1
 <Steps>
 
   <Step title="Create an account">
-    Register a new user by sending a `POST` request to `/api/v1/users/signup/`. On success the endpoint returns the new user object. Email verification may be required depending on your instance configuration.
+    Register a new user by sending a `POST` request to `/api/v1/users/signup/`. The endpoint accepts `multipart/form-data`. On success it returns access and refresh tokens together with the new user object and their organisation list. Email verification may be required depending on your instance configuration.
 
     <CodeGroup>
       ```bash curl
       curl -s -X POST http://localhost:4000/api/v1/users/signup/ \
-        -H "Content-Type: application/json" \
-        -d '{
-          "name": "Ada Lovelace",
-          "email": "ada@example.com",
-          "password": "SecureP@ssw0rd!"
-        }'
+        -F "name=Ada Lovelace" \
+        -F "email=ada@example.com" \
+        -F "password=SecureP@ssw0rd!"
       ```
 
       ```json Response
       {
-        "id": "usr_01hxyz...",
-        "name": "Ada Lovelace",
-        "email": "ada@example.com",
-        "email_verify": false
+        "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+        "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+        "user": {
+          "id": "usr_01hxyz...",
+          "name": "Ada Lovelace",
+          "email": "ada@example.com",
+          "email_verify": false,
+          "organisation_id": "org_01habc...",
+          "profile_pic": null,
+          "profile_pic_thumb": null,
+          "roles": [],
+          "inserted_at": "2025-01-15T10:00:00Z",
+          "updated_at": "2025-01-15T10:00:00Z"
+        },
+        "organisations": [
+          { "id": "org_01habc...", "name": "Ada Lovelace's Org" }
+        ]
       }
       ```
     </CodeGroup>
@@ -64,18 +74,25 @@ http://localhost:4000/api/v1
 
       ```json Response
       {
-        "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+        "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
         "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
         "user": {
           "id": "usr_01hxyz...",
           "name": "Ada Lovelace",
-          "email": "ada@example.com"
+          "email": "ada@example.com",
+          "email_verify": true,
+          "organisation_id": "org_01habc...",
+          "profile_pic": null,
+          "profile_pic_thumb": null,
+          "roles": [],
+          "inserted_at": "2025-01-15T10:00:00Z",
+          "updated_at": "2025-01-15T10:00:00Z"
         }
       }
       ```
     </CodeGroup>
 
-    Save the `token` value — you will pass it as a Bearer token in every subsequent request.
+    Save the `access_token` value — you will pass it as a Bearer token in every subsequent request.
 
     ```bash
     export WRAFT_TOKEN="eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
@@ -97,16 +114,21 @@ http://localhost:4000/api/v1
         "name": "Ada Lovelace",
         "email": "ada@example.com",
         "email_verify": true,
-        "current_org_id": "org_01habc...",
-        "profile": {
-          "name": "Ada Lovelace"
-        }
+        "organisation_id": "org_01habc...",
+        "profile_pic": null,
+        "profile_pic_thumb": null,
+        "roles": [],
+        "role_names": [],
+        "permissions": [],
+        "features": {},
+        "inserted_at": "2025-01-15T10:00:00Z",
+        "updated_at": "2025-01-15T10:00:00Z"
       }
       ```
     </CodeGroup>
 
     <Note>
-      The `current_org_id` field identifies which organisation context your token is scoped to. Most resources (layouts, content types, documents) are created within this organisation.
+      The `organisation_id` field identifies which organisation context your token is scoped to. Most resources (layouts, content types, documents) are created within this organisation.
     </Note>
   </Step>
 

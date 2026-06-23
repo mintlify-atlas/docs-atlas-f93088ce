@@ -1,7 +1,7 @@
 ---
 title: "Pipelines and Pipeline Stages API Reference"
 sidebarTitle: "Pipelines"
-description: "Create and manage automation pipelines that connect WraftForms to document generation stages, with full CRUD access and trigger history tracking."
+description: "Create and manage automation pipelines linking WraftForms to document generation stages. Includes pipe stage CRUD and trigger history tracking."
 ---
 
 Pipelines are the backbone of Wraft's document automation. A pipeline links a source — typically a WraftForm — to one or more **pipe stages**, where each stage maps a content type and data template to produce a document. When a form entry is submitted, Wraft routes the data through every stage in the pipeline, generating documents automatically. Trigger histories record every execution for auditing and debugging.
@@ -266,7 +266,7 @@ Each pipeline is made up of one or more **pipe stages**. A stage maps a content 
 
 ### Create a Pipe Stage
 
-`POST /api/v1/pipelines/:pipeline_id/pipe_stages`
+`POST /api/v1/pipelines/:pipeline_id/stages`
 
 Creates a new stage within the specified pipeline.
 
@@ -303,7 +303,7 @@ Creates a new stage within the specified pipeline.
 
 <CodeGroup>
 ```bash cURL
-curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/pipe_stages \
+curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/stages \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -344,7 +344,7 @@ curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/pipe_stages \
 
 ### Update a Pipe Stage
 
-`PUT /api/v1/pipe_stages/:id`
+`PUT /api/v1/stages/:id`
 
 Updates an existing pipe stage's content type, data template, or state assignment.
 
@@ -362,7 +362,7 @@ Same fields as [Create a Pipe Stage](#create-a-pipe-stage).
 
 <CodeGroup>
 ```bash cURL
-curl -X PUT https://api.wraft.com/api/v1/pipe_stages/kjasfqjbn \
+curl -X PUT https://api.wraft.com/api/v1/stages/kjasfqjbn \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -376,7 +376,7 @@ curl -X PUT https://api.wraft.com/api/v1/pipe_stages/kjasfqjbn \
 
 ### Delete a Pipe Stage
 
-`DELETE /api/v1/pipe_stages/:id`
+`DELETE /api/v1/stages/:id`
 
 Deletes a pipe stage from the pipeline.
 
@@ -390,7 +390,7 @@ Deletes a pipe stage from the pipeline.
 
 <CodeGroup>
 ```bash cURL
-curl -X DELETE https://api.wraft.com/api/v1/pipe_stages/kjasfqjbn \
+curl -X DELETE https://api.wraft.com/api/v1/stages/kjasfqjbn \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -411,9 +411,9 @@ Every time a pipeline runs — whether triggered by a form entry or an API call 
 
 ### List Trigger Histories
 
-`GET /api/v1/trigger_histories`
+`GET /api/v1/triggers`
 
-Returns a paginated list of all trigger history entries for the caller's organisation.
+Returns a paginated list of all trigger history entries for the caller's organisation. Optionally filter by pipeline name or status code.
 
 **Required permission:** `pipeline:show`
 
@@ -421,6 +421,18 @@ Returns a paginated list of all trigger history entries for the caller's organis
 
 <ParamField query="page" type="string">
   Page number. Defaults to `1`.
+</ParamField>
+
+<ParamField query="pipeline_name" type="string">
+  Filter by pipeline name.
+</ParamField>
+
+<ParamField query="status" type="integer">
+  Filter by execution status code. Allowed values: `1` (enqueued), `2` (executing), `3` (pending), `4` (partially_completed), `5` (success), `6` (failed).
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `pipeline_name`, `pipeline_name_desc`, `status`, `status_desc`, `inserted_at`, `inserted_at_desc`.
 </ParamField>
 
 #### Response Fields
@@ -448,7 +460,7 @@ Returns a paginated list of all trigger history entries for the caller's organis
 
 <CodeGroup>
 ```bash cURL
-curl -X GET "https://api.wraft.com/api/v1/trigger_histories?page=1" \
+curl -X GET "https://api.wraft.com/api/v1/triggers?page=1" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -484,9 +496,76 @@ curl -X GET "https://api.wraft.com/api/v1/trigger_histories?page=1" \
 
 ---
 
+### List Trigger Histories for a Pipeline
+
+`GET /api/v1/pipelines/:pipeline_id/triggers`
+
+Returns a paginated list of trigger history entries scoped to a single pipeline.
+
+**Required permission:** `pipeline:show`
+
+#### Path Parameters
+
+<ParamField path="pipeline_id" type="string" required>
+  UUID of the pipeline.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="page" type="string">
+  Page number. Defaults to `1`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/pipelines/1232148nb3478/triggers?page=1" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Trigger a Pipeline Manually
+
+`POST /api/v1/pipelines/:pipeline_id/triggers`
+
+Manually triggers a pipeline execution with a provided data payload. Creates a trigger history entry and enqueues the pipeline job.
+
+**Required permission:** `pipeline:manage`
+
+#### Path Parameters
+
+<ParamField path="pipeline_id" type="string" required>
+  UUID of the pipeline to trigger.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="data" type="object" required>
+  Key-value pairs of field data to pass to the pipeline stages.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/triggers \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "data": { "name": "Jane Smith", "department": "Engineering" } }'
+```
+
+```json Response
+{
+  "trigger_id": "jhdiuh23y498sjdbda",
+  "pipeline_id": "1232148nb3478"
+}
+```
+</CodeGroup>
+
+---
+
 ### Show a Trigger History Entry
 
-`GET /api/v1/trigger_histories/:id`
+`GET /api/v1/triggers/:id`
 
 Retrieves full details for a single trigger history record, including input data, response payload, and execution metadata.
 
@@ -500,7 +579,7 @@ Retrieves full details for a single trigger history record, including input data
 
 <CodeGroup>
 ```bash cURL
-curl -X GET https://api.wraft.com/api/v1/trigger_histories/jhdiuh23y498sjdbda \
+curl -X GET https://api.wraft.com/api/v1/triggers/jhdiuh23y498sjdbda \
   -H "Authorization: Bearer <token>"
 ```
 </CodeGroup>
@@ -527,7 +606,7 @@ The following example walks through creating a pipeline, adding a stage, and the
   </Step>
   <Step title="Add a pipe stage">
     ```bash cURL
-    curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/pipe_stages \
+    curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/stages \
       -H "Authorization: Bearer <token>" \
       -H "Content-Type: application/json" \
       -d '{
@@ -553,7 +632,7 @@ The following example walks through creating a pipeline, adding a stage, and the
   </Step>
   <Step title="Check trigger history">
     ```bash cURL
-    curl -X GET "https://api.wraft.com/api/v1/trigger_histories?page=1" \
+    curl -X GET "https://api.wraft.com/api/v1/triggers?page=1" \
       -H "Authorization: Bearer <token>"
     ```
   </Step>

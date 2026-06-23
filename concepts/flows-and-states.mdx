@@ -67,8 +67,8 @@ Content-Type: application/json
 **Approval-driven transition** — An approver approves or rejects, and Wraft automatically advances to the next state (approval) or retreats to the previous state (rejection):
 
 ```http
-POST /api/v1/contents/:id/approve
-POST /api/v1/contents/:id/reject
+PUT /api/v1/contents/:id/approve
+PUT /api/v1/contents/:id/reject
 ```
 
 Every transition is recorded in an `InstanceTransitionLog` with the reviewer ID, review status (`approved`/`rejected`), timestamp, and the from/to state IDs. Approvers in the new state receive a notification.
@@ -230,8 +230,10 @@ On top of state-based transitions, Wraft supports an additional **Approval Syste
 
 Unlike state transitions (which are sequential by order), Approval Systems allow specific named approvers to explicitly sign off without necessarily changing the document's current state. This enables scenarios like "legal must sign off AND finance must sign off before the document can advance" within a single state.
 
+To retrieve the approval history for a document:
+
 ```http
-GET /api/v1/contents/:id/approval_systems
+GET /api/v1/contents/:id/approval_history
 ```
 
 ## State Index for a Flow
@@ -249,7 +251,7 @@ Returns a list of states ordered by their `order` field, each including their as
 Users can see all documents that are waiting for their review action:
 
 ```http
-GET /api/v1/contents/pending_approvals
+GET /api/v1/users/list_pending_approvals
 ```
 
 This returns paginated instances where:
@@ -259,5 +261,5 @@ This returns paginated instances where:
 Each result includes the `next_state` and `previous_state` names so the reviewer knows what approving or rejecting will do.
 
 <Tip>
-  Use the `name` query parameter on the pending approvals endpoint to filter by document title: `GET /api/v1/contents/pending_approvals?name=employment`.
+  Use the `name` query parameter on the pending approvals endpoint to filter by document title: `GET /api/v1/users/list_pending_approvals?name=employment`.
 </Tip>

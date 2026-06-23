@@ -82,7 +82,7 @@ The sender address for all outbound emails is derived from the `WRAFT_HOSTNAME` 
   </Tab>
 
   <Tab title="SMTP">
-    For deployments that need to route email through an existing mail infrastructure — corporate SMTP relays, SendGrid SMTP, Postmark SMTP, and so on — set `EMAIL_ADAPTER=smtp` and configure the SMTP variables. When `SMTP_HOST` is present in the environment, `runtime.exs` configures `Swoosh.Adapters.SMTP` and this takes precedence over Resend.
+    For deployments that need to route email through an existing mail infrastructure — corporate SMTP relays, SendGrid SMTP, Postmark SMTP, and so on — set `SMTP_HOST` in your environment. When `SMTP_HOST` is present, `runtime.exs` configures `Swoosh.Adapters.SMTP`, which overrides the Resend adapter.
 
     ### Setup
 
@@ -93,7 +93,6 @@ The sender address for all outbound emails is derived from the `WRAFT_HOSTNAME` 
 
       <Step title="Set environment variables">
         ```shell .env.dev
-        export EMAIL_ADAPTER=smtp
         export SMTP_HOST=smtp.gmail.com
         export SMTP_PORT=587
         export SMTP_USERNAME=your-address@gmail.com
@@ -108,8 +107,7 @@ The sender address for all outbound emails is derived from the `WRAFT_HOSTNAME` 
 
     | Variable | Required | Default | Description |
     |---|---|---|---|
-    | `EMAIL_ADAPTER` | Optional | — | Set to `smtp` to signal SMTP usage (the actual adapter is activated by `SMTP_HOST`) |
-    | `SMTP_HOST` | ✅ Yes | — | Hostname of the SMTP relay |
+    | `SMTP_HOST` | ✅ Yes | — | Hostname of the SMTP relay. Setting this variable activates the SMTP adapter. |
     | `SMTP_PORT` | Optional | `587` | SMTP port. Common values: `587` (STARTTLS), `465` (SSL), `25` (plain) |
     | `SMTP_USERNAME` | ✅ Yes | — | SMTP authentication username |
     | `SMTP_PASSWORD` | ✅ Yes | — | SMTP authentication password |
@@ -122,23 +120,29 @@ The sender address for all outbound emails is derived from the `WRAFT_HOSTNAME` 
     ```elixir config/runtime.exs
     if smtp_host = System.get_env("SMTP_HOST") do
       smtp_port = String.to_integer(System.get_env("SMTP_PORT") || "587")
+      smtp_username = System.get_env("SMTP_USERNAME")
+      smtp_password = System.get_env("SMTP_PASSWORD")
+      smtp_ssl = System.get_env("SMTP_SSL") || false
 
       config :wraft_doc, WraftDocWeb.Mailer,
         adapter: Swoosh.Adapters.SMTP,
         relay: smtp_host,
-        username: System.get_env("SMTP_USERNAME"),
-        password: System.get_env("SMTP_PASSWORD"),
-        ssl: System.get_env("SMTP_SSL") || false,
+        username: smtp_username,
+        password: smtp_password,
+        ssl: smtp_ssl,
         tls: :always,
         auth: :always,
         port: smtp_port,
         retries: 2,
-        no_mx_lookups: true
+        no_mx_lookups: true,
+        tls_options: [
+          verify: :verify_none
+        ]
     end
     ```
 
     <Warning>
-    If both `RESEND_API_KEY` and `SMTP_HOST` are set, the SMTP configuration evaluated last in `runtime.exs` will override Resend. To avoid conflicts, set only one of the two.
+    If both `RESEND_API_KEY` and `SMTP_HOST` are set, the SMTP configuration takes effect because it is evaluated after Resend in `runtime.exs`. To avoid conflicts, set only one of the two.
     </Warning>
   </Tab>
 </Tabs>
@@ -158,10 +162,6 @@ Set it to the domain you have verified with your email provider. For example, if
 ```shell
 export WRAFT_HOSTNAME=mail.wraft.app
 ```
-
-<Note>
-`WRAFT_HOSTNAME` is also read at compile time inside `config/config.exs` to set the default `sender_email`. Make sure it is exported before running `mix compile` or `mix setup`.
-</Note>
 
 ---
 

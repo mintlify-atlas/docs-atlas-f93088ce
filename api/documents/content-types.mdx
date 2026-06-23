@@ -1,7 +1,7 @@
 ---
 title: "Content Types API: Define Document Templates in Wraft"
 sidebarTitle: "Content Types"
-description: "Manage content type templates — create, list, search, update, and delete document blueprints that link layouts, flows, themes, and custom field definitions."
+description: "Manage content type blueprints in Wraft — create, list, search, update, and delete templates that bind layouts, flows, themes, and custom fields."
 ---
 
 A content type is the master blueprint for a class of documents in Wraft. It binds together a layout (the page template), a flow (the approval workflow), and a theme (typography and colours), then defines the custom fields that authors fill in when creating document instances. Every document instance in Wraft is created from a content type.
@@ -26,8 +26,8 @@ Creates a new content type for the authenticated user's organisation. The `layou
   Display name for the content type. Must be unique within the organisation.
 </ParamField>
 
-<ParamField body="description" type="string" required>
-  Human-readable description of what this content type is used for.
+<ParamField body="description" type="string">
+  Human-readable description of what this content type is used for. Optional on create; required on update.
 </ParamField>
 
 <ParamField body="prefix" type="string" required>
@@ -270,7 +270,7 @@ Updates an existing content type. The `layout_id` is required in the request bod
 
 ### Request body
 
-Accepts the same fields as the create endpoint. `name`, `description`, `layout_id`, `flow_id`, `prefix`, and `theme_id` are required on update.
+Accepts the same fields as the create endpoint. `name`, `description`, `layout_id`, `flow_id`, `prefix`, and `theme_id` are all required on update (note that `description` is optional on create but becomes required on update).
 
 <CodeGroup>
 ```bash cURL

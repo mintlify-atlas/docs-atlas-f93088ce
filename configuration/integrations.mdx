@@ -1,10 +1,10 @@
 ---
 title: "Configuring Third-Party Integrations for Wraft Platform"
 sidebarTitle: "Integrations"
-description: "Set up Wraft's third-party integrations for e-signatures (DocuSign, Documenso) and cloud storage imports (Google Drive, Dropbox, OneDrive) via REST API."
+description: "Set up Wraft's third-party integrations for e-signatures (DocuSign, Documenso), notifications (Slack), and cloud storage imports (Google Drive, Dropbox, OneDrive)."
 ---
 
-Wraft connects to third-party services for two broad purposes: e-signature workflows and cloud storage imports. E-signature integrations let you send documents directly to DocuSign or Documenso for signing. Cloud storage integrations let users browse and import files from Google Drive, Dropbox, or OneDrive into Wraft's document repository. All integrations are managed on a per-organisation basis through the REST API.
+Wraft connects to third-party services for three broad purposes: e-signature workflows, team notifications, and cloud storage imports. E-signature integrations let you send documents directly to DocuSign or Documenso for signing. Notification integrations let you receive document lifecycle events in Slack. Cloud storage integrations let users browse and import files from Google Drive, Dropbox, or OneDrive into Wraft's document repository. All integrations are managed on a per-organisation basis through the REST API.
 
 Integration records are stored in the database and are scoped to an organisation. Each integration has a `provider` (e.g. `"docusign"`), a `category`, an `enabled` flag, and an encrypted `config` field that holds provider-specific credentials. Credentials are encrypted at rest using the `CLOAK_KEY`.
 
@@ -14,18 +14,34 @@ Integration records are stored in the database and are scoped to an organisation
 
 <CardGroup cols={2}>
   <Card title="DocuSign" icon="signature">
-    Send documents for electronic signature using DocuSign's envelope flow. Uses OAuth 2.0 Authorization Code with PKCE.
+    Send documents for electronic signature using DocuSign's envelope flow. Uses OAuth 2.0 Authorization Code.
   </Card>
   <Card title="Documenso" icon="pen-nib">
-    Open-source e-signature platform. Configured with an API token and uses coordinate-based signature field placement.
+    Open-source e-signature platform. Configured with an API token.
   </Card>
   <Card title="Google Drive" icon="google-drive">
     Browse, search, and import files and folders from Google Drive. OAuth 2.0 with refresh token support.
   </Card>
+  <Card title="Dropbox" icon="dropbox">
+    Browse, search, and import files and folders from Dropbox. OAuth 2.0 with refresh token support.
+  </Card>
+  <Card title="OneDrive" icon="microsoft">
+    Browse, search, and import files and folders from Microsoft OneDrive. OAuth 2.0 via Azure AD.
+  </Card>
   <Card title="Slack" icon="slack">
     Receive document lifecycle notifications in Slack channels. Configured with a bot token and signing secret.
   </Card>
+  <Card title="Okta" icon="shield">
+    Enterprise identity and access management. Configured with an Okta domain, API token, and OAuth 2.0 credentials.
+  </Card>
+  <Card title="Zapier" icon="bolt">
+    Automate workflows by connecting Wraft events to thousands of apps via Zapier webhooks.
+  </Card>
 </CardGroup>
+
+<Note>
+Several integrations — Slack, Documenso, Zapier, and Okta — have `is_feature_enabled: false` in the current release. They appear in the API responses but full end-to-end functionality may not be active yet. Google Drive is the only cloud storage integration with `is_feature_enabled: true`. Check the Swagger UI at `http://localhost:4000/spec/swaggerui` for current operation status.
+</Note>
 
 ---
 
@@ -33,7 +49,7 @@ Integration records are stored in the database and are scoped to an organisation
 
 ### DocuSign
 
-DocuSign uses an OAuth 2.0 Authorization Code Grant flow with PKCE. You must first create an integration record with the required credentials, then complete the OAuth handshake to obtain an access token.
+DocuSign uses an OAuth 2.0 Authorization Code Grant flow. You must first create an integration record with the required credentials, then complete the OAuth handshake to obtain an access token.
 
 #### Step 1 — Create the integration config
 
@@ -87,7 +103,7 @@ After the user authorises the application in DocuSign, DocuSign will redirect ba
 GET /api/v1/integrations/docusign/callback?code=<authorization_code>
 ```
 
-The access token is stored encrypted in the integration's `metadata` field. The integration is ready to send documents once the OAuth flow completes.
+The access token is stored encrypted in the integration record. The integration is ready to send documents once the OAuth flow completes.
 
 #### Required config fields
 
@@ -107,7 +123,7 @@ The access token is stored encrypted in the integration's `metadata` field. The 
 
 ### Documenso
 
-Documenso is configured with a single API token. No OAuth flow is required. The integration uses coordinate-based signature placement — each signer is assigned explicit `page`, `x`, `y`, `width`, and `height` values for their signature field.
+Documenso is configured with a single API token. No OAuth flow is required.
 
 #### Create the integration config
 
@@ -148,17 +164,72 @@ POST /api/v1/integrations/new
 
 ## Cloud Storage Integrations
 
-Cloud storage integrations require OAuth credentials to be configured in `config/runtime.exs` via environment variables. The OAuth flow is initiated through the `/api/v1/cloud_auth` endpoints.
+Cloud storage integrations require OAuth credentials to be set via environment variables. The OAuth flow is initiated through the `/api/v1/auth/:provider` endpoint.
 
-### Google Drive
+### Environment Variables
+
+Set the following variables before starting the server. `REDIRECT_URI` is shared across all cloud storage providers.
 
 | Variable | Description |
 |---|---|
 | `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID from the Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 Client Secret |
-| `REDIRECT_URI` | OAuth callback URI registered in the Google Cloud Console |
+| `DROPBOX_CLIENT_ID` | Dropbox OAuth 2.0 App Key from the Dropbox developer console |
+| `DROPBOX_CLIENT_SECRET` | Dropbox OAuth 2.0 App Secret |
+| `ONEDRIVE_CLIENT_ID` | Microsoft Azure AD Application (Client) ID |
+| `ONEDRIVE_CLIENT_SECRET` | Microsoft Azure AD Client Secret |
+| `ONEDRIVE_TENANT_ID` | Microsoft Azure AD Tenant ID |
+| `REDIRECT_URI` | OAuth callback URI registered with each cloud provider |
 
-Once authenticated, users can list, search, and import files and folders from their Google Drive.
+### OAuth Flow
+
+Initiate the OAuth login URL for any cloud storage provider using:
+
+```shell
+GET /api/v1/auth/:provider
+```
+
+Where `:provider` is `google`, `dropbox`, or `onedrive`. The provider redirects back to the registered callback:
+
+```shell
+GET /api/v1/googledrive/callback
+GET /api/v1/dropbox/callback
+GET /api/v1/onedrive/callback
+```
+
+### Google Drive
+
+Once authenticated, users can list, search, and import files from their Google Drive:
+
+```shell
+GET /api/v1/clouds/google/files
+GET /api/v1/clouds/google/file/:file_id
+POST /api/v1/clouds/google/import
+GET /api/v1/clouds/google/search
+GET /api/v1/clouds/google/folders
+GET /api/v1/clouds/google/folder/:folder_id/files
+```
+
+### Dropbox
+
+```shell
+GET /api/v1/clouds/dropbox/files
+GET /api/v1/clouds/dropbox/file/:file_id
+POST /api/v1/clouds/dropbox/download
+GET /api/v1/clouds/dropbox/search
+GET /api/v1/clouds/dropbox/folders
+```
+
+### OneDrive
+
+```shell
+GET /api/v1/clouds/onedrive/files
+GET /api/v1/clouds/onedrive/file/:file_id
+POST /api/v1/clouds/onedrive/download
+GET /api/v1/clouds/onedrive/search
+GET /api/v1/clouds/onedrive/folders
+GET /api/v1/clouds/onedrive/folder/:folder_id/files
+```
 
 ---
 
@@ -173,15 +244,11 @@ All integration endpoints require authentication. Integration management endpoin
 GET /api/v1/integrations/
 ```
 
-```shell Get a single integration by ID
-GET /api/v1/integrations/:id
-```
-
 ```shell List available integration configs (with enable status)
 GET /api/v1/integrations/configs
 ```
 
-```shell Get config details for a specific provider
+```shell Get a single integration config by provider
 GET /api/v1/integrations/configs/:id
 ```
 
@@ -288,10 +355,49 @@ GET /api/v1/integrations/configs/categories
         "available_events": []
       }
     ]
+  },
+  {
+    "category": "communication",
+    "integrations": [
+      {
+        "provider": "slack",
+        "name": "Slack",
+        "enabled": false,
+        "available_events": [
+          { "id": "document.signed", "name": "Document Signed" },
+          { "id": "document.created", "name": "Document Created" }
+        ]
+      }
+    ]
+  },
+  {
+    "category": "authentication",
+    "integrations": [
+      {
+        "provider": "okta",
+        "name": "Okta",
+        "enabled": false,
+        "available_events": [
+          { "id": "user.created", "name": "User Created" },
+          { "id": "user.deactivated", "name": "User Deactivated" }
+        ]
+      }
+    ]
+  },
+  {
+    "category": "automation",
+    "integrations": [
+      {
+        "provider": "zapier",
+        "name": "Zapier",
+        "enabled": false,
+        "available_events": [
+          { "id": "document.created", "name": "Document Created" },
+          { "id": "document.updated", "name": "Document Updated" },
+          { "id": "document.signed", "name": "Document Signed" }
+        ]
+      }
+    ]
   }
 ]
 ```
-
-<Note>
-Some integrations have `is_feature_enabled: false` in the current release (Slack, Documenso, Zapier, Okta). These providers appear in the API response but creating an integration record for them may not fully activate all features. Check the Swagger UI at `http://localhost:4000/spec/swaggerui` for the current operation status.
-</Note>

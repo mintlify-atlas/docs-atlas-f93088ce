@@ -1,7 +1,7 @@
 ---
 title: "Document Instances API: Create, Manage & Build"
 sidebarTitle: "Instances"
-description: "Full reference for document instance endpoints — create, retrieve, update, delete, build rendered PDFs, advance workflow states, manage versions, and lock documents."
+description: "API reference for document instances — create, retrieve, update, delete, build PDFs, advance workflow states, manage versions, and lock documents."
 ---
 
 Document instances are the core artifact of Wraft. Each instance is a concrete document generated from a content type: it holds the raw editor markup, a `serialized` map of field values, its workflow state, version history, and the URL of the rendered PDF once built. Every instance belongs to exactly one content type, which determines the layout, theme, and flow applied during rendering.
@@ -18,7 +18,7 @@ Document instances are the core artifact of Wraft. Each instance is a concrete d
 
 Creates a new document instance under the specified content type. The content type's layout, theme, and flow are resolved automatically. After creation, the instance is indexed in Typesense and any registered webhooks for `document.created` are triggered asynchronously.
 
-**Required permission:** `document:manage`
+**Required permission:** Authenticated membership (no additional permission scope required beyond a valid bearer token and organisation membership).
 
 ### Path parameters
 
@@ -529,7 +529,7 @@ curl -s "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000
 
 ## Restore a version
 
-`POST /api/v1/contents/:id/versions/:version_id/restore`
+`POST /api/v1/contents/:id/restore/:version_id`
 
 Restores an instance to the content of a previous version. The instance's `raw` and `serialized` fields are replaced with the version's stored data.
 
@@ -543,7 +543,7 @@ Restores an instance to the content of a previous version. The instance's `raw` 
 <CodeGroup>
 ```bash cURL
 curl -s -X POST \
-  "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/versions/v1-uuid/restore" \
+  "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/restore/v1-uuid" \
   -H "Authorization: Bearer <token>"
 ```
 </CodeGroup>

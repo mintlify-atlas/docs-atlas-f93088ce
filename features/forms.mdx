@@ -189,9 +189,9 @@ A Form Mapping links a Pipe Stage to a Form and defines how form field values ma
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/v1/forms/mapping` | `POST` | Create a new form-to-pipeline-stage mapping |
-| `/api/v1/forms/mapping/:mapping_id` | `GET` | Retrieve a specific form mapping |
-| `/api/v1/forms/mapping/:mapping_id` | `PUT` | Update the field mapping rules |
+| `/api/v1/forms/:form_id/mapping` | `POST` | Create a new form-to-pipeline-stage mapping |
+| `/api/v1/forms/:form_id/mapping/:mapping_id` | `GET` | Retrieve a specific form mapping |
+| `/api/v1/forms/:form_id/mapping/:mapping_id` | `PUT` | Update the field mapping rules |
 
 The mapping object pairs `source` (form field) with `destination` (content type field) using their `machine_name` or `name` values for resolution.
 

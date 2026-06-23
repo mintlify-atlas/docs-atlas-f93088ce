@@ -30,14 +30,14 @@ Each agent type is backed by a dedicated Jido Action module:
 
 ## Executing an AI Tool
 
-`POST /api/v1/ai_tools`
+`POST /api/v1/ai/generate`
 
 Provide document `content` and either a saved `prompt_id` or an inline `prompt` with a `prompt_type`. An optional `model_id` selects a specific configured model; if omitted, the organisation's default model is used.
 
 <CodeGroup>
 
 ```bash Using a saved prompt
-curl -X POST https://api.wraft.com/api/v1/ai_tools \
+curl -X POST https://api.wraft.com/api/v1/ai/generate \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -48,7 +48,7 @@ curl -X POST https://api.wraft.com/api/v1/ai_tools \
 ```
 
 ```bash Using an inline prompt
-curl -X POST https://api.wraft.com/api/v1/ai_tools \
+curl -X POST https://api.wraft.com/api/v1/ai/generate \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -108,7 +108,7 @@ AI Models define which LLM provider and model to call, along with authentication
 
 ```bash cURL
 # Create a model
-curl -X POST https://api.wraft.com/api/v1/models \
+curl -X POST https://api.wraft.com/api/v1/ai/models \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -149,7 +149,7 @@ Prompts are reusable template instructions stored in your organisation. Each Pro
 
 ```bash cURL
 # Create a prompt
-curl -X POST https://api.wraft.com/api/v1/prompts \
+curl -X POST https://api.wraft.com/api/v1/ai/prompts \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -160,10 +160,12 @@ curl -X POST https://api.wraft.com/api/v1/prompts \
   }'
 
 # List prompts
-GET /api/v1/prompts
+curl https://api.wraft.com/api/v1/ai/prompts \
+  -H "Authorization: Bearer <token>"
 
 # Get a specific prompt
-GET /api/v1/prompts/:id
+curl https://api.wraft.com/api/v1/ai/prompts/:id \
+  -H "Authorization: Bearer <token>"
 ```
 
 <Warning>

@@ -361,7 +361,7 @@ curl -X POST https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-44665
 
 Returns the complete list of event type strings that can be subscribed to.
 
-**Required permission:** `webhook:show`
+Requires authentication. No additional permission is needed beyond a valid token.
 
 <CodeGroup>
 ```bash cURL
@@ -403,7 +403,7 @@ Wraft records every delivery attempt — successful or failed — as a structure
 
 Returns paginated delivery logs across all webhooks in the organisation.
 
-**Required permission:** `webhook:show`
+Requires authentication. No additional permission is needed beyond a valid token.
 
 #### Query Parameters
 
@@ -452,7 +452,7 @@ curl -X GET "https://api.wraft.com/api/v1/webhooks/logs?event=document.signed&su
 
 Retrieves complete details for a single delivery log, including request headers, request body, response body, and error messages.
 
-**Required permission:** `webhook:show`
+Requires authentication. No additional permission is needed beyond a valid token.
 
 #### Path Parameters
 
@@ -492,7 +492,7 @@ curl -X GET https://api.wraft.com/api/v1/webhooks/logs/log-550e8400-e29b-41d4-a7
 
 Returns paginated delivery logs scoped to a single webhook.
 
-**Required permission:** `webhook:show`
+Requires authentication. No additional permission is needed beyond a valid token.
 
 #### Path Parameters
 
@@ -518,7 +518,7 @@ curl -X GET "https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-44665
 
 Returns delivery performance statistics for the specified webhook over the most recent 30-day period.
 
-**Required permission:** `webhook:show`
+Requires authentication. No additional permission is needed beyond a valid token.
 
 #### Path Parameters
 

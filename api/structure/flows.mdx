@@ -1,7 +1,7 @@
 ---
 title: "Flows and States API: Document Workflow Management"
 sidebarTitle: "Flows"
-description: "Design approval workflows by creating flows with ordered states, assigning approvers per state at document level, and advancing documents through review cycles."
+description: "Design Wraft approval workflows — create flows with ordered states, assign approvers at the document level, and advance documents through review cycles."
 ---
 
 A flow is a named approval workflow that governs how documents move through their lifecycle — from an initial draft state through review, approval, and final publication. Each flow contains an ordered list of **states**, and each content type is bound to exactly one flow. When a document instance is created, it enters the first state of its content type's flow.
@@ -28,8 +28,8 @@ Creates a new approval flow in the authenticated user's organisation. For contro
   Display name for the flow. Must be unique within the organisation.
 </ParamField>
 
-<ParamField body="controlled" type="boolean" required>
-  `true` for a controlled flow requiring explicit approver sign-off at each state; `false` for an uncontrolled flow where transitions are unrestricted.
+<ParamField body="controlled" type="boolean">
+  `true` for a controlled flow requiring explicit approver sign-off at each state; `false` (default) for an uncontrolled flow where transitions are unrestricted. When omitted, the server defaults to `false`.
 </ParamField>
 
 <ParamField body="control_data" type="object">
@@ -189,7 +189,7 @@ Updates the name or controlled status of an existing flow. The Typesense index i
 ### Request body
 
 <ParamField body="name" type="string" required>Updated flow name.</ParamField>
-<ParamField body="controlled" type="boolean" required>Updated controlled flag.</ParamField>
+<ParamField body="controlled" type="boolean">Updated controlled flag. When `true`, `control_data` must also be provided.</ParamField>
 
 <CodeGroup>
 ```bash cURL

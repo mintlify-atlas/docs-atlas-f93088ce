@@ -1,10 +1,10 @@
 ---
 title: "Electronic Signatures: DocuSign and Documenso Integration"
 sidebarTitle: "E-Signatures"
-description: "Send Wraft documents for electronic signature via DocuSign or Documenso, specifying signers by name and email, and track envelope status through the API."
+description: "Send Wraft documents for electronic signature via DocuSign or Documenso, specifying signers by name and email, with coordinate-based or anchor-based field placement."
 ---
 
-Wraft integrates with two leading electronic signature providers — **DocuSign** and **Documenso** — to let you collect legally binding signatures on documents without leaving your document workflow. Once a document is in the appropriate state, you send it for signature with a list of signers; Wraft handles the delivery and tracks the envelope status for you.
+Wraft integrates with two leading electronic signature providers — **DocuSign** and **Documenso** — to let you collect legally binding signatures on documents without leaving your document workflow. Once a document is in the appropriate state, you send it for signature with a list of signers; Wraft handles the delivery and records the signature request for audit purposes.
 
 ## Supported Providers
 
@@ -23,14 +23,13 @@ Before sending a document for signature, configure your integration credentials:
 
 <Steps>
   <Step title="Configure provider credentials">
-    Add your DocuSign or Documenso credentials via the integration config API:
+    First create the integration via `POST /api/v1/integrations/new`, then update its configuration with your provider credentials:
 
     ```bash cURL
-    curl -X POST https://api.wraft.com/api/v1/integration_configs \
+    curl -X PUT https://api.wraft.com/api/v1/integrations/:id/config \
       -H "Authorization: Bearer <token>" \
       -H "Content-Type: application/json" \
       -d '{
-        "provider": "docusign",
         "config": {
           "client_id": "YOUR_DOCUSIGN_CLIENT_ID",
           "client_secret": "YOUR_DOCUSIGN_CLIENT_SECRET",
@@ -55,17 +54,18 @@ Before sending a document for signature, configure your integration credentials:
 
 ## Sending a Document for Signature
 
-`POST /api/v1/contents/:id/sign`
+`POST /api/v1/integrations/send_document`
 
-Provide the document `id` in the path, the provider `type`, and an array of `signers` (each with `name` and `email`). For Documenso, you can additionally specify coordinate-based signature placement using `page`, `x`, `y`, `width`, and `height`.
+Provide the document `id` in the request body along with the provider `type` and an array of `signers` (each with `name` and `email`). For Documenso, you can additionally specify coordinate-based signature placement using `page`, `x`, `y`, `width`, and `height`.
 
 <CodeGroup>
 
 ```bash DocuSign
-curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
+curl -X POST https://api.wraft.com/api/v1/integrations/send_document \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
+    "id": "doc-uuid-here",
     "type": "docusign",
     "signers": [
       {
@@ -82,10 +82,11 @@ curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
 ```
 
 ```bash Documenso
-curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
+curl -X POST https://api.wraft.com/api/v1/integrations/send_document \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
+    "id": "doc-uuid-here",
     "type": "documenso",
     "signers": [
       {
@@ -110,6 +111,10 @@ curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
 ```
 
 </CodeGroup>
+
+<ParamField body="id" type="string" required>
+  The UUID of the Wraft document (content instance) to send for signature.
+</ParamField>
 
 <ParamField body="type" type="string" required>
   The signature provider to use. Must be `"docusign"` or `"documenso"`.
@@ -150,7 +155,7 @@ curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
         Wraft posts the envelope to `POST /restapi/v2.1/accounts/{account_id}/envelopes` with status `sent`. DocuSign immediately emails each signer.
       </Step>
       <Step title="Track status">
-        Use `GET /api/v1/integrations/docusign/envelopes/:envelope_id` to check the current envelope status.
+        Use `GET /api/v1/contents/:id/signatures` to list all e-signature records associated with a document and check their status.
       </Step>
     </Steps>
   </Tab>
@@ -174,14 +179,12 @@ curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
 
 ## Signature Status Tracking
 
-After sending, you can retrieve the status of an existing signature request:
+After sending, you can retrieve the e-signature records attached to a document:
 
 ```bash cURL
-# Check DocuSign envelope status
-GET /api/v1/integrations/docusign/envelopes/:envelope_id
-
 # List e-signature records for a document
-GET /api/v1/contents/:id/signatures
+curl "https://api.wraft.com/api/v1/contents/:id/signatures" \
+  -H "Authorization: Bearer <token>"
 ```
 
 The `ESignature` record in Wraft stores `signature_type` (`:electronic`, `:digital`, or `:handwritten`), `signature_date`, `is_valid`, `ip_address`, `verification_token`, and `signature_data` for audit purposes.

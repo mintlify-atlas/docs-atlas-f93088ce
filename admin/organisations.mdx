@@ -1,7 +1,7 @@
 ---
-title: "Managing Organisations in Wraft: A Complete Guide"
+title: "Managing Organisations in Wraft: Complete Guide"
 sidebarTitle: "Organisations"
-description: "Learn how to create, configure, and manage organisations in Wraft — the top-level workspace that groups users, documents, content types, flows, and more."
+description: "Create, configure, and manage Wraft organisations — the top-level workspace that groups users, documents, content types, flows, and more."
 ---
 
 An organisation is the top-level tenant unit in Wraft. Every resource — content types, layouts, themes, flows, documents, and users — lives inside an organisation. A single Wraft user account can belong to multiple organisations and switch between them freely. When a user registers for the first time, Wraft automatically provisions a personal organisation for them.
@@ -93,11 +93,13 @@ curl -X GET https://your-wraft-instance.com/api/v1/organisations/{id} \
 
 ## Updating an Organisation
 
-`PUT /api/v1/organisations/:id` accepts the same `multipart/form-data` fields as creation. The `name` field is silently ignored for the personal organisation to prevent renaming it.
+`PATCH /api/v1/organisations/:id` accepts the same `multipart/form-data` fields as creation. The `name` field is silently ignored for the personal organisation to prevent renaming it.
+
+Requires the `workspace:update` permission.
 
 <CodeGroup>
 ```bash cURL
-curl -X PUT https://your-wraft-instance.com/api/v1/organisations/{id} \
+curl -X PATCH https://your-wraft-instance.com/api/v1/organisations/{id} \
   -H "Authorization: Bearer <your_jwt_token>" \
   -F "name=Acme Corporation Rebranded" \
   -F "email=hello@acme.com" \
@@ -114,9 +116,31 @@ curl -X PUT https://your-wraft-instance.com/api/v1/organisations/{id} \
 ```
 </CodeGroup>
 
-<Warning>
-  Only users with the `workspace:update` permission can update organisation details.
-</Warning>
+---
+
+## Deleting an Organisation
+
+Deleting an organisation is a two-step process that requires the organisation owner to confirm via an emailed deletion code. Only the owner can request and confirm deletion. Personal organisations cannot be deleted.
+
+### Step 1 — Request a Deletion Code
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/request_deletion \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+Wraft emails a one-time confirmation code to the owner's address.
+
+### Step 2 — Confirm Deletion
+
+```bash cURL
+curl -X DELETE https://your-wraft-instance.com/api/v1/organisations \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "<deletion_code>"}'
+```
+
+Requires the `workspace:delete` permission. On success, the user is automatically switched to their personal organisation and new tokens are issued.
 
 ---
 
@@ -124,7 +148,7 @@ curl -X PUT https://your-wraft-instance.com/api/v1/organisations/{id} \
 
 ### List Members
 
-Retrieve a paginated list of all members in the current organisation. Supports filtering by name or role and sorting by name or join date.
+Retrieve a paginated list of all members in the current organisation. Supports filtering by `name` or `role` and sorting by name or join date.
 
 ```bash cURL
 curl -X GET "https://your-wraft-instance.com/api/v1/organisations/{id}/members?page=1&role=editor&sort=joined_at_desc" \
@@ -133,13 +157,15 @@ curl -X GET "https://your-wraft-instance.com/api/v1/organisations/{id}/members?p
 
 Supported `sort` values: `name`, `name_desc`, `joined_at`, `joined_at_desc`.
 
+Requires the `members:show` permission.
+
 ### Invite a Member
 
 Send an invitation email to a new user with one or more roles pre-assigned.
 
 <CodeGroup>
 ```bash cURL
-curl -X POST https://your-wraft-instance.com/api/v1/organisations/{id}/members \
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/users/invite \
   -H "Authorization: Bearer <your_jwt_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -161,14 +187,50 @@ curl -X POST https://your-wraft-instance.com/api/v1/organisations/{id}/members \
   You cannot invite members to a personal organisation. At least one valid role from your organisation must be specified in `role_ids`.
 </Note>
 
+Requires the `members:manage` permission.
+
+### List Invited Users
+
+Retrieve all pending invitations sent from your organisation.
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/organisations/users/invite \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+### Resend an Invitation
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/users/invite/{invited_user_id}/resend \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+### Revoke an Invitation
+
+```bash cURL
+curl -X DELETE https://your-wraft-instance.com/api/v1/organisations/users/invite/{invited_user_id}/revoke \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
 ### Remove a Member
 
 ```bash cURL
-curl -X DELETE https://your-wraft-instance.com/api/v1/organisations/{id}/members/{user_id} \
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/remove_user/{user_id} \
   -H "Authorization: Bearer <your_jwt_token>"
 ```
 
 The organisation owner cannot be removed. Requires the `members:manage` permission.
+
+### Transfer Ownership
+
+Transfer organisation ownership to another existing member. Only the current owner can perform this action.
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/transfer_ownership \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": "<new_owner_user_id>"}'
+```
 
 ---
 
@@ -184,19 +246,19 @@ Users can belong to multiple organisations simultaneously. The JWT token encodes
 
 ## Organisation Fields (Custom Metadata)
 
-Organisation fields let you define custom metadata keys that are shared across the organisation and can be referenced inside document templates.
+Organisation fields let you define custom metadata keys that are shared across the organisation and can be referenced inside document templates. The endpoint path uses a hyphen (`organisation-fields`).
 
 ### List Organisation Fields
 
 ```bash cURL
-curl -X GET https://your-wraft-instance.com/api/v1/organisation_fields \
+curl -X GET https://your-wraft-instance.com/api/v1/organisation-fields \
   -H "Authorization: Bearer <your_jwt_token>"
 ```
 
 ### Create an Organisation Field
 
 ```bash cURL
-curl -X POST https://your-wraft-instance.com/api/v1/organisation_fields \
+curl -X POST https://your-wraft-instance.com/api/v1/organisation-fields \
   -H "Authorization: Bearer <your_jwt_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -204,8 +266,6 @@ curl -X POST https://your-wraft-instance.com/api/v1/organisation_fields \
     "field_type_id": "ft-uuid-here"
   }'
 ```
-
-Requires the `organisation_field:manage` permission.
 
 ---
 
@@ -219,21 +279,30 @@ Requires the `organisation_field:manage` permission.
     `GET /api/v1/organisations/:id`
   </Card>
   <Card title="Update Organisation" icon="pen-to-square">
-    `PUT /api/v1/organisations/:id`
+    `PATCH /api/v1/organisations/:id`
   </Card>
   <Card title="Delete Organisation" icon="trash">
-    `DELETE /api/v1/organisations/:id`
+    `DELETE /api/v1/organisations`
+  </Card>
+  <Card title="Request Deletion Code" icon="envelope">
+    `POST /api/v1/organisations/request_deletion`
   </Card>
   <Card title="List Members" icon="users">
     `GET /api/v1/organisations/:id/members`
   </Card>
-  <Card title="Invite Member" icon="envelope">
-    `POST /api/v1/organisations/:id/members`
+  <Card title="Invite Member" icon="user-plus">
+    `POST /api/v1/organisations/users/invite`
+  </Card>
+  <Card title="Remove Member" icon="user-minus">
+    `POST /api/v1/organisations/remove_user/:id`
+  </Card>
+  <Card title="Transfer Ownership" icon="crown">
+    `POST /api/v1/organisations/transfer_ownership`
   </Card>
   <Card title="List Org Fields" icon="list">
-    `GET /api/v1/organisation_fields`
+    `GET /api/v1/organisation-fields`
   </Card>
   <Card title="Create Org Field" icon="plus">
-    `POST /api/v1/organisation_fields`
+    `POST /api/v1/organisation-fields`
   </Card>
 </CardGroup>

@@ -1,7 +1,7 @@
 ---
 title: "Self-Hosting Wraft on Your Own Infrastructure"
 sidebarTitle: "Self-Hosting"
-description: "Step-by-step instructions for deploying Wraft with Docker Compose or a manual Elixir dev setup, including all required environment variables and service ports."
+description: "Step-by-step guide to deploying Wraft with Docker Compose or a manual Elixir setup, covering required environment variables and service ports."
 ---
 
 Wraft is fully open source (AGPLv3) and designed to run on your own servers. You own all your data, documents, and configuration. This guide covers both the recommended Docker Compose path — which bundles every dependency into a single `docker-compose up -d` — and a manual development setup for contributors or teams that need fine-grained control over each service.
@@ -256,7 +256,7 @@ Wraft is fully open source (AGPLv3) and designed to run on your own servers. You
       </Step>
 
       <Step title="Set up the project and start the server">
-        Run the project setup task (installs dependencies, creates and migrates the database, seeds initial data):
+        Run the project setup task. This fetches Elixir dependencies (`deps.get`), checks required system tools (`wraft.check_deps`), creates and migrates the database and seeds initial data (`ecto.setup`), and installs frontend asset dependencies (`assets.setup`):
 
         ```bash
         mix setup

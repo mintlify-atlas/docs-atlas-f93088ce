@@ -97,16 +97,15 @@ curl -X POST https://api.wraft.com/api/v1/pipelines \
 
 ## Managing Pipeline Stages
 
-Pipeline Stages define the mapping from a form submission to a document. Each stage references a Content Type (the document shape) and a Data Template (the pre-filled content). Stages are managed at `POST /api/v1/pipe_stages` and linked to the pipeline.
+Pipeline Stages define the mapping from a form submission to a document. Each stage references a Content Type (the document shape) and a Data Template (the pre-filled content). Stages are created under a specific pipeline and updated or deleted via the top-level stages resource.
 
 <Steps>
   <Step title="Create a stage">
     ```bash cURL
-    curl -X POST https://api.wraft.com/api/v1/pipe_stages \
+    curl -X POST https://api.wraft.com/api/v1/pipelines/:pipeline_id/stages \
       -H "Authorization: Bearer <token>" \
       -H "Content-Type: application/json" \
       -d '{
-        "pipeline_id": "pipeline-uuid",
         "content_type_id": "ct-uuid",
         "data_template_id": "dt-uuid"
       }'
@@ -114,7 +113,7 @@ Pipeline Stages define the mapping from a form submission to a document. Each st
   </Step>
   <Step title="Update a stage">
     ```bash cURL
-    curl -X PUT https://api.wraft.com/api/v1/pipe_stages/:id \
+    curl -X PUT https://api.wraft.com/api/v1/stages/:id \
       -H "Authorization: Bearer <token>" \
       -H "Content-Type: application/json" \
       -d '{
@@ -125,7 +124,8 @@ Pipeline Stages define the mapping from a form submission to a document. Each st
   </Step>
   <Step title="Delete a stage">
     ```bash cURL
-    DELETE /api/v1/pipe_stages/:id
+    curl -X DELETE "https://api.wraft.com/api/v1/stages/:id" \
+      -H "Authorization: Bearer <token>"
     ```
   </Step>
 </Steps>
@@ -172,13 +172,16 @@ Every time a pipeline executes, Wraft records a Trigger History entry. This capt
 
 ```bash cURL
 # List all trigger histories in your organisation
-GET /api/v1/trigger_histories?page=1&sort=inserted_at_desc
+curl "https://api.wraft.com/api/v1/triggers?page=1&sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
 
-# Filter by pipeline name
-GET /api/v1/trigger_histories?pipeline_name=New+Hire
+# List trigger histories for a specific pipeline
+curl "https://api.wraft.com/api/v1/pipelines/:pipeline_id/triggers" \
+  -H "Authorization: Bearer <token>"
 
-# Filter by status
-GET /api/v1/trigger_histories?status=5
+# Show a specific trigger history entry
+curl "https://api.wraft.com/api/v1/triggers/:id" \
+  -H "Authorization: Bearer <token>"
 ```
 
 <Tip>

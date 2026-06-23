@@ -22,7 +22,7 @@ Wraft supports two authentication mechanisms that can be used interchangeably on
     Create a new Wraft account. On success the response includes an access token and refresh token so the user is immediately signed in.
 
     ```http
-    POST /api/v1/users/signup
+    POST /api/v1/users/signup/
     ```
 
     <ParamField body="name" type="string" required>
@@ -39,16 +39,13 @@ Wraft supports two authentication mechanisms that can be used interchangeably on
 
     <CodeGroup>
     ```bash cURL
-    curl -X POST http://localhost:4000/api/v1/users/signup \
-      -H "Content-Type: application/json" \
-      -d '{
-        "name": "Ada Lovelace",
-        "email": "ada@example.com",
-        "password": "s3cur3P@ssw0rd"
-      }'
+    curl -X POST http://localhost:4000/api/v1/users/signup/ \
+      -F "name=Ada Lovelace" \
+      -F "email=ada@example.com" \
+      -F "password=s3cur3P@ssw0rd"
     ```
 
-    ```json Response
+    ```json Response (201 Created)
     {
       "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
       "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
@@ -56,8 +53,20 @@ Wraft supports two authentication mechanisms that can be used interchangeably on
         "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
         "name": "Ada Lovelace",
         "email": "ada@example.com",
-        "email_verify": false
-      }
+        "email_verify": false,
+        "profile_pic": null,
+        "profile_pic_thumb": null,
+        "organisation_id": "c1d2e3f4-...",
+        "roles": [],
+        "inserted_at": "2025-01-15T10:00:00Z",
+        "updated_at": "2025-01-15T10:00:00Z"
+      },
+      "organisations": [
+        {
+          "id": "c1d2e3f4-...",
+          "name": "Ada Lovelace's Organisation"
+        }
+      ]
     }
     ```
     </CodeGroup>
@@ -101,7 +110,8 @@ Wraft supports two authentication mechanisms that can be used interchangeably on
       "user": {
         "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
         "name": "Ada Lovelace",
-        "email": "ada@example.com"
+        "email": "ada@example.com",
+        "email_verify": true
       }
     }
     ```
@@ -538,7 +548,7 @@ The table below summarises every authentication-related endpoint covered on this
 
 | Method | Path | Description | Auth required |
 |---|---|---|---|
-| `POST` | `/api/v1/users/signup` | Register a new account | No |
+| `POST` | `/api/v1/users/signup/` | Register a new account | No |
 | `POST` | `/api/v1/users/signin` | Sign in with email + password | No |
 | `POST` | `/api/v1/users/signin/google` | Sign in with Google OAuth token | No |
 | `POST` | `/api/v1/users/token_refresh` | Exchange refresh token for new pair | No |

@@ -60,6 +60,17 @@ openssl rand -base64 32
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/wraft-dev-db
 ```
 
+### Production database tuning
+
+The following variables are read only when `MIX_ENV=prod` and allow tuning the Ecto connection pool:
+
+| Variable | Default | Description |
+|---|---|---|
+| `POOL_SIZE` | `10` | Number of database connections in the Ecto pool |
+| `POOL_TIMEOUT` | `15000` | Milliseconds to wait for a connection from the pool before timing out |
+| `DB_TIMEOUT` | `15000` | Milliseconds to wait for a database query to complete |
+| `ECTO_IPV6` | — | When set to any value, enables IPv6 socket options for the database connection |
+
 ---
 
 ## Storage (MinIO)
@@ -74,6 +85,7 @@ Wraft uses MinIO — an S3-compatible object storage server — to store all gen
 | `MINIO_BUCKET` | ✅ Yes | `wraft` | Name of the primary storage bucket |
 | `MINIO_ROOT_USER` | ✅ Yes | `minioadmin` | MinIO root access key (equivalent to AWS `access_key_id`) |
 | `MINIO_ROOT_PASSWORD` | ✅ Yes | `minioadmin` | MinIO root secret key (equivalent to AWS `secret_access_key`) |
+| `MINIO_SCHEMA` | Optional | `http` | URL scheme (`http` or `https`) used by `ex_aws` for S3 API calls. Set to `https` when connecting to TLS-enabled MinIO or S3-compatible services. |
 
 ```shell .env.dev – MinIO example
 export MINIO_URL=127.0.0.1:9000
@@ -113,12 +125,23 @@ Wraft sends transactional emails via Resend (default) or an SMTP relay. See the 
 | Variable | Required | Description |
 |---|---|---|
 | `RESEND_API_KEY` | ✅ Yes (if using Resend) | API key from [resend.com](https://resend.com). When set, Resend is used as the mail adapter. |
-| `EMAIL_ADAPTER` | Optional | Set to `smtp` to use an SMTP relay instead of Resend |
-| `SMTP_HOST` | ✅ Yes (if SMTP) | Hostname of the SMTP relay (e.g. `smtp.gmail.com`) |
+| `SMTP_HOST` | ✅ Yes (if SMTP) | Hostname of the SMTP relay (e.g. `smtp.gmail.com`). When set, the SMTP adapter is used and overrides Resend. |
 | `SMTP_PORT` | Optional | SMTP port. Defaults to `587` when not set |
 | `SMTP_USERNAME` | ✅ Yes (if SMTP) | SMTP authentication username |
 | `SMTP_PASSWORD` | ✅ Yes (if SMTP) | SMTP authentication password |
 | `SMTP_SSL` | Optional | Set to `true` to enable SSL on the SMTP connection. Defaults to `false` |
+
+---
+
+## Web Server
+
+These variables are read when `MIX_ENV=prod` to configure the Phoenix HTTP endpoint.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PHX_HOST` | `localhost` | Public hostname the Phoenix endpoint advertises in URLs |
+| `PORT` | `4000` | TCP port the Phoenix HTTP server binds to |
+| `HTTP_IDLE_TIMEOUT_MS` | `3600000` | Maximum milliseconds a keep-alive HTTP connection may be idle before the server closes it |
 
 ---
 
@@ -132,13 +155,14 @@ Wraft sends transactional emails via Resend (default) or an SMTP relay. See the 
 
 ## Digital Signing
 
-These variables configure the local keystore used to apply digital signatures to generated PDF documents. All three are optional — when omitted, Wraft falls back to the default keystore at `priv/signature/doc_signer.p12`.
+These variables configure the local keystore used to apply digital signatures to generated PDF documents. All are optional — when omitted, Wraft falls back to the default keystore shipped with the application.
 
 | Variable | Required | Description |
 |---|---|---|
-| `SIGNING_LOCAL_FILE_PATH` | Optional | Relative path (under `priv/keystore/`) to the `.p12` certificate file used for PDF signing |
+| `SIGNING_LOCAL_FILE_PATH` | Optional | Path to the `.p12` certificate file, relative to the application's `priv/` directory (e.g. `signature/my-cert.p12`). Defaults to `signature/doc_signer.p12`. |
 | `SIGNING_LOCAL_PASSPHRASE` | Optional | Passphrase for the `.p12` certificate file |
 | `SIGNING_KEY_ALIAS` | Optional | Key alias within the `.p12` file to use for signing. Defaults to `"1"` |
+| `SIGNATURE_JAR_FILE` | Optional | Path to the PDF-signing JAR, relative to the application's `priv/` directory. Defaults to `signature/pdf-signer.jar`. |
 
 ---
 
@@ -172,6 +196,32 @@ Wraft integrates with [Paddle](https://paddle.com) for subscription billing on c
 | `PADDLE_API_KEY` | Optional | Paddle API key for making server-side billing API calls |
 | `PADDLE_WEBHOOK_SECRET_KEY` | Optional | Secret used to verify the signature of inbound Paddle webhook events |
 | `PADDLE_BASE_URL` | Optional | Paddle API base URL. Use `https://api.paddle.com` for production or `https://sandbox-api.paddle.com` for testing |
+
+---
+
+## Billing (Razorpay)
+
+| Variable | Required | Description |
+|---|---|---|
+| `RAZORPAY_KEY_ID` | Optional | Razorpay API key ID |
+| `RAZORPAY_KEY_SECRET` | Optional | Razorpay API key secret |
+
+---
+
+## Cloud Storage Integrations
+
+These variables configure OAuth credentials for the Google Drive, Dropbox, and OneDrive cloud import features. See the [Integrations guide](/configuration/integrations) for full setup instructions.
+
+| Variable | Description |
+|---|---|
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID from the Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 Client Secret |
+| `DROPBOX_CLIENT_ID` | Dropbox OAuth 2.0 App Key |
+| `DROPBOX_CLIENT_SECRET` | Dropbox OAuth 2.0 App Secret |
+| `ONEDRIVE_CLIENT_ID` | Microsoft Azure AD Application (Client) ID |
+| `ONEDRIVE_CLIENT_SECRET` | Microsoft Azure AD Client Secret |
+| `ONEDRIVE_TENANT_ID` | Microsoft Azure AD Tenant ID |
+| `REDIRECT_URI` | Shared OAuth callback URI registered with each cloud provider |
 
 ---
 

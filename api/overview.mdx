@@ -109,9 +109,8 @@ Refer to individual endpoint documentation in the Swagger UI (at `http://localho
 
 ## Rate Limiting
 
-Wraft uses an ETS-backed rate limiter (powered by the [Hammer](https://github.com/ExHammer/hammer) library) to protect the API from abuse. Rate limiting is applied at the sign-in endpoint and per API key.
+Wraft uses an ETS-backed rate limiter (powered by the [Hammer](https://github.com/ExHammer/hammer) library) to protect the API from abuse. Rate limiting is applied per API key.
 
-- **Sign-in rate limit:** A maximum of **5 failed login attempts** per IP address and email combination within a **15-minute window**. Subsequent attempts within that window are rejected with `429 Too Many Requests`.
 - **API key rate limit:** Each API key has a configurable `rate_limit` field (default **1000 requests per hour**). Requests that exceed this limit receive `429 Too Many Requests`.
 
 <Warning>
@@ -132,7 +131,7 @@ The API uses standard HTTP status codes. The table below lists the codes you wil
 | `403` | Forbidden | Valid credentials were provided, but the user lacks permission for this action. |
 | `404` | Not Found | The requested resource does not exist or is not accessible. |
 | `422` | Unprocessable Entity | The request was well-formed but contained semantic errors (e.g. validation failures). |
-| `429` | Too Many Requests | The rate limit has been exceeded. |
+| `429` | Too Many Requests | The API key rate limit has been exceeded. |
 | `500` | Internal Server Error | An unexpected error occurred on the server. |
 
 ## Error Response Format

@@ -106,18 +106,24 @@ Approvers can see all documents awaiting their review:
 
 ```bash cURL
 # All pending approvals for the current user
-GET /api/v1/users/me/instances_to_approve?page=1
+curl "https://api.wraft.com/api/v1/users/instance-approval-systems?page=1" \
+  -H "Authorization: Bearer <token>"
 
 # All instance approvals for a specific user
-GET /api/v1/users/:user_id/instance_approval_systems?page=1
+curl "https://api.wraft.com/api/v1/users/:id/instance-approval-systems?page=1" \
+  -H "Authorization: Bearer <token>"
+
+# List documents pending the current user's approval
+curl "https://api.wraft.com/api/v1/users/list_pending_approvals" \
+  -H "Authorization: Bearer <token>"
 ```
 
 ### Approving a Document
 
-`POST /api/v1/contents/:id/approve`
+`PUT /api/v1/contents/:id/approve`
 
 ```bash cURL
-curl -X POST https://api.wraft.com/api/v1/contents/:id/approve \
+curl -X PUT https://api.wraft.com/api/v1/contents/:id/approve \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -125,10 +131,10 @@ On approval, the document advances to the `post_state` defined in the Approval S
 
 ### Rejecting a Document
 
-`POST /api/v1/contents/:id/reject`
+`PUT /api/v1/contents/:id/reject`
 
 ```bash cURL
-curl -X POST https://api.wraft.com/api/v1/contents/:id/reject \
+curl -X PUT https://api.wraft.com/api/v1/contents/:id/reject \
   -H "Authorization: Bearer <token>"
 ```
 

@@ -1,7 +1,7 @@
 ---
 title: "Themes API: Fonts, Colors, and Typescale Configuration"
 sidebarTitle: "Themes"
-description: "Create and manage themes that control document typography — fonts, typescale sizes, and brand colors (body, primary, secondary) applied during PDF rendering."
+description: "Create and manage Wraft themes — configure font families, typescale sizes, and brand colors (body, primary, secondary) applied during PDF rendering."
 ---
 
 A theme controls the visual presentation of rendered documents. It packages together a font family, a typescale map (heading and paragraph sizes), and optional brand colours (body, primary, secondary). Themes are referenced by content types and are applied by the rendering engine during PDF generation. Optional font assets — TrueType (`.ttf`) or OpenType (`.otf`) font files — can be attached via the asset system.
@@ -207,7 +207,7 @@ curl -s "https://api.wraft.com/api/v1/themes/theme-uuid-0001" \
 
 `PUT /api/v1/themes/:id`
 
-Updates an existing theme. The request uses `multipart/form-data`. `name` and `font` are required on update; all other fields are optional. The Typesense index is refreshed after a successful update.
+Updates an existing theme. The request uses `multipart/form-data`. `name`, `font`, and `typescale` are required on update; all other fields are optional. The Typesense index is refreshed after a successful update.
 
 **Required permission:** `theme:manage`
 
@@ -219,7 +219,7 @@ Updates an existing theme. The request uses `multipart/form-data`. `name` and `f
 
 <ParamField body="name" type="string" required>Updated theme name.</ParamField>
 <ParamField body="font" type="string" required>Updated font family name.</ParamField>
-<ParamField body="typescale" type="string">Updated typescale JSON string (e.g. `'{"h1":28,"p":12}'`).</ParamField>
+<ParamField body="typescale" type="string" required>Updated typescale JSON string (e.g. `'{"h1":28,"p":12}'`).</ParamField>
 <ParamField body="body_color" type="string">Updated body text hex colour.</ParamField>
 <ParamField body="primary_color" type="string">Updated primary brand hex colour.</ParamField>
 <ParamField body="secondary_color" type="string">Updated secondary brand hex colour.</ParamField>

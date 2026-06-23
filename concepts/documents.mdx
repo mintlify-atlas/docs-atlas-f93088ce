@@ -216,8 +216,8 @@ Deletes the instance and removes all uploaded PDF artefacts from storage. This a
 Approvers assigned to the current state can approve or reject a document through dedicated endpoints. These differ from `PATCH /states` in that they follow the Flow's automatic next/previous state logic rather than accepting an explicit `state_id`.
 
 ```http
-POST /api/v1/contents/:id/approve
-POST /api/v1/contents/:id/reject
+PUT /api/v1/contents/:id/approve
+PUT /api/v1/contents/:id/reject
 ```
 
 Both endpoints require the `document:review` permission and are gated by the approver list on the current state.

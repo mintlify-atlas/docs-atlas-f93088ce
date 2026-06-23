@@ -1,7 +1,7 @@
 ---
 title: "Data Templates API: Reusable Document Prefill Templates"
 sidebarTitle: "Data Templates"
-description: "Create and manage data templates that pre-populate document instance fields, support variable substitution, and enable bulk document generation from CSV imports."
+description: "Create and manage reusable data templates that pre-fill Wraft document fields with variable substitution and enable bulk generation from CSV imports."
 ---
 
 Data templates are reusable prefill blueprints that live inside a content type. When a document author creates a new instance, they can select a data template to pre-populate the `raw` editor content and `serialized` field values, reducing repetitive entry. Data templates also power bulk-build workflows, where each row of a CSV file is combined with a template to generate a batch of documents.
@@ -42,8 +42,8 @@ Creates a new data template scoped to the given content type. The template is in
   Raw markup template body. Supports `[variable]` placeholders that are replaced with `serialized` field values at instance creation time.
 </ParamField>
 
-<ParamField body="serialized" type="object" required>
-  Default field values map. Keys must match the `machine_name` of the content type's fields. Supports `[variable]` placeholders as values.
+<ParamField body="serialized" type="object">
+  Default field values map. Keys must match the `machine_name` of the content type's fields. Supports `[variable]` placeholders as values. Optional — defaults to an empty map if omitted.
 </ParamField>
 
 <CodeGroup>
@@ -251,7 +251,7 @@ Updates an existing data template. All fields from the create request body are a
 
 ### Request body
 
-Accepts the same fields as the create endpoint (`title`, `title_template`, `data`, `serialized`). All four fields are required on update.
+Accepts the same fields as the create endpoint. `title`, `title_template`, and `data` are required on update; `serialized` is optional.
 
 <CodeGroup>
 ```bash cURL

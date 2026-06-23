@@ -10,6 +10,27 @@ Each webhook belongs to a single organisation and can subscribe to one or more e
 
 ---
 
+## Webhook Schema
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | — | Unique human-readable name within the organisation |
+| `url` | string | — | Target HTTP or HTTPS endpoint |
+| `events` | array of strings | — | List of subscribed event names |
+| `is_active` | boolean | `true` | Whether the webhook is currently enabled |
+| `headers` | map | `{}` | Custom HTTP headers sent with every delivery |
+| `retry_count` | integer | `3` | Delivery retry attempts on failure (must be positive) |
+| `timeout_seconds` | integer | `30` | Request timeout per attempt (must be positive) |
+| `failure_count` | integer | `0` | Cumulative failed delivery count |
+| `last_triggered_at` | datetime | `null` | Timestamp of the most recent delivery attempt |
+| `last_response_status` | integer | `null` | HTTP status code from the last delivery attempt |
+
+<Note>
+  The `secret` field is write-only — it is never returned in API responses. Use it by storing a shared secret and verifying incoming requests on your endpoint.
+</Note>
+
+---
+
 ## Supported Events
 
 Retrieve the full list of supported event names from the API:
@@ -198,10 +219,11 @@ curl -X PATCH https://your-wraft-instance.com/api/v1/webhooks/{id}/toggle \
 ```json Response
 {
   "id": "wh-uuid-1234",
-  "is_active": false,
-  ...
+  "is_active": false
 }
 ```
+
+Requires the `webhook:manage` permission.
 
 ---
 
@@ -222,6 +244,13 @@ Returns logs for all webhooks in the organisation. Supports filtering by `webhoo
 
 ```bash cURL
 curl -X GET "https://your-wraft-instance.com/api/v1/webhooks/logs?event=document.state_updated&success=false" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+### Log Details for a Single Delivery
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/webhooks/logs/{log_id} \
   -H "Authorization: Bearer <your_jwt_token>"
 ```
 
@@ -285,7 +314,7 @@ curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id}/stats \
   </Tab>
   <Tab title="Update">
     ```bash cURL
-    curl -X PUT https://your-wraft-instance.com/api/v1/webhooks/{id} \
+    curl -X PATCH https://your-wraft-instance.com/api/v1/webhooks/{id} \
       -H "Authorization: Bearer <your_jwt_token>" \
       -H "Content-Type: application/json" \
       -d '{
@@ -300,7 +329,7 @@ curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id}/stats \
     curl -X DELETE https://your-wraft-instance.com/api/v1/webhooks/{id} \
       -H "Authorization: Bearer <your_jwt_token>"
     ```
-    Returns `204 No Content` on success.
+    Returns `204 No Content` on success. Requires the `webhook:delete` permission.
   </Tab>
 </Tabs>
 
@@ -319,7 +348,7 @@ curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id}/stats \
     `GET /api/v1/webhooks/:id`
   </Card>
   <Card title="Update Webhook" icon="pen-to-square">
-    `PUT /api/v1/webhooks/:id`
+    `PATCH /api/v1/webhooks/:id`
   </Card>
   <Card title="Delete Webhook" icon="trash">
     `DELETE /api/v1/webhooks/:id`
@@ -330,14 +359,17 @@ curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id}/stats \
   <Card title="Test Webhook" icon="flask">
     `POST /api/v1/webhooks/:id/test`
   </Card>
-  <Card title="Webhook Events" icon="bolt">
+  <Card title="Available Events" icon="bolt">
     `GET /api/v1/webhooks/events`
   </Card>
   <Card title="Webhook Logs" icon="scroll">
     `GET /api/v1/webhooks/:id/logs`
   </Card>
-  <Card title="All Logs" icon="database">
+  <Card title="All Org Logs" icon="database">
     `GET /api/v1/webhooks/logs`
+  </Card>
+  <Card title="Log Details" icon="magnifying-glass">
+    `GET /api/v1/webhooks/logs/:log_id`
   </Card>
   <Card title="Webhook Stats" icon="chart-bar">
     `GET /api/v1/webhooks/:id/stats`
