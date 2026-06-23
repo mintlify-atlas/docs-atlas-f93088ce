@@ -1,0 +1,345 @@
+---
+title: "Webhooks: Real-Time Document Lifecycle Event Notifications"
+sidebarTitle: "Webhooks"
+description: "Push Wraft document lifecycle events to any HTTP endpoint. Subscribe to state changes, approvals, and pipeline results using persistent, logged webhooks."
+---
+
+Webhooks allow Wraft to push event notifications to external systems over HTTP whenever something meaningful happens in the document lifecycle. Instead of polling the API, your systems receive an HTTP `POST` request the moment an event fires. This is the primary integration mechanism for connecting Wraft to Slack, document signing services, ERP systems, or any custom automation pipeline.
+
+Each webhook belongs to a single organisation and can subscribe to one or more event types. Wraft retries failed deliveries according to the `retry_count` configured on the webhook, and all delivery attempts are logged for inspection.
+
+---
+
+## Supported Events
+
+Retrieve the full list of supported event names from the API:
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/webhooks/events \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+The current set of supported events is:
+
+| Event | Triggered When |
+|---|---|
+| `document.created` | A new document instance is created |
+| `document.sent` | A document is sent for review or approval |
+| `document.completed` | A document reaches its final completed state |
+| `document.cancelled` | A document is cancelled |
+| `document.signed` | A document is signed |
+| `document.rejected` | A document is rejected during a flow step |
+| `document.state_updated` | A document moves to a new flow state |
+| `document.comment_added` | A comment is added to a document |
+| `document.deleted` | A document is deleted |
+| `document.reminder_sent` | An automated reminder is dispatched for a document |
+| `pipeline.completed` | A pipeline run finishes successfully |
+| `pipeline.failed` | A pipeline run fails |
+| `pipeline.partially_completed` | A pipeline run completes with partial success |
+| `test` | Triggered manually by the webhook test endpoint |
+
+---
+
+## Creating a Webhook
+
+<Steps>
+  <Step title="Choose your endpoint URL and events">
+    Your endpoint must be a publicly accessible HTTP or HTTPS URL. Select the specific events you want to subscribe to from the supported events list above.
+  </Step>
+  <Step title="POST to create the webhook">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://your-wraft-instance.com/api/v1/webhooks \
+      -H "Authorization: Bearer <your_jwt_token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Document Lifecycle Notifier",
+        "url": "https://hooks.example.com/wraft-events",
+        "events": [
+          "document.created",
+          "document.state_updated",
+          "document.completed",
+          "document.rejected"
+        ],
+        "headers": {
+          "X-Custom-Auth": "my-secret-token"
+        },
+        "retry_count": 3,
+        "timeout_seconds": 30
+      }'
+    ```
+
+    ```json Response
+    {
+      "id": "wh-uuid-1234",
+      "name": "Document Lifecycle Notifier",
+      "url": "https://hooks.example.com/wraft-events",
+      "events": [
+        "document.created",
+        "document.state_updated",
+        "document.completed",
+        "document.rejected"
+      ],
+      "is_active": true,
+      "headers": {
+        "X-Custom-Auth": "my-secret-token"
+      },
+      "retry_count": 3,
+      "timeout_seconds": 30,
+      "failure_count": 0,
+      "last_triggered_at": null,
+      "last_response_status": null,
+      "inserted_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+    ```
+    </CodeGroup>
+
+    Requires the `webhook:manage` permission.
+  </Step>
+</Steps>
+
+### Request Body Fields
+
+<ParamField body="name" type="string" required>
+  A unique, human-readable name for the webhook within your organisation.
+</ParamField>
+
+<ParamField body="url" type="string" required>
+  A valid HTTP or HTTPS URL that Wraft will `POST` event payloads to.
+</ParamField>
+
+<ParamField body="events" type="array of strings" required>
+  One or more event names from the supported events list. Invalid event names are rejected.
+</ParamField>
+
+<ParamField body="headers" type="object">
+  Optional key-value map of custom HTTP headers to include in every outbound request (e.g., for authentication).
+</ParamField>
+
+<ParamField body="retry_count" type="integer">
+  Number of times Wraft will retry a failed delivery. Defaults to `3`. Must be a positive integer.
+</ParamField>
+
+<ParamField body="timeout_seconds" type="integer">
+  Maximum seconds to wait for a response before treating the delivery as failed. Defaults to `30`. Must be a positive integer.
+</ParamField>
+
+---
+
+## Webhook Payload Format
+
+When an event fires, Wraft sends an HTTP `POST` request to your endpoint with a JSON body in the following shape:
+
+```json Example Payload
+{
+  "event": "document.state_updated",
+  "timestamp": "2024-01-15T14:32:10.123456Z",
+  "webhook_id": "wh-uuid-1234",
+  "organisation_id": "org-uuid-5678",
+  "data": {
+    "document_id": "doc-uuid-9012",
+    "instance_id": "WOL0042",
+    "state": "Review",
+    "previous_state": "Draft",
+    "updated_by": "jane@acme.com",
+    "content_type": "Offer Letter"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `event` | The event name that triggered this delivery |
+| `timestamp` | ISO 8601 UTC timestamp of when the event fired |
+| `webhook_id` | The UUID of the webhook that delivered this payload |
+| `organisation_id` | The UUID of the organisation where the event occurred |
+| `data` | Event-specific payload containing resource details |
+
+<Tip>
+  Add a shared secret in `headers` (e.g., `"X-Wraft-Secret": "your-secret"`) and verify it in your handler to confirm the request genuinely originated from your Wraft instance.
+</Tip>
+
+---
+
+## Testing a Webhook
+
+Send a test delivery to verify your endpoint is reachable and processing payloads correctly. The test fires a `test` event through the normal delivery queue.
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/webhooks/{id}/test \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "test",
+    "content": "This is a test webhook from Wraft"
+  }'
+```
+
+```json Response
+{
+  "message": "Test webhook triggered successfully"
+}
+```
+
+Requires the `webhook:manage` permission.
+
+---
+
+## Toggling a Webhook On or Off
+
+Temporarily disable a webhook without deleting it. Calling this endpoint again re-enables it.
+
+```bash cURL
+curl -X PATCH https://your-wraft-instance.com/api/v1/webhooks/{id}/toggle \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+```json Response
+{
+  "id": "wh-uuid-1234",
+  "is_active": false,
+  ...
+}
+```
+
+---
+
+## Webhook Logs
+
+Wraft records a log entry for every delivery attempt, capturing request headers, response body, HTTP status code, execution time, and whether the attempt succeeded.
+
+### Logs for a Specific Webhook
+
+```bash cURL
+curl -X GET "https://your-wraft-instance.com/api/v1/webhooks/{id}/logs?page=1" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+### All Logs Across the Organisation
+
+Returns logs for all webhooks in the organisation. Supports filtering by `webhook_id`, `event`, `success` (`true`/`false`), `from_date`, and `to_date`.
+
+```bash cURL
+curl -X GET "https://your-wraft-instance.com/api/v1/webhooks/logs?event=document.state_updated&success=false" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+```json Log Entry
+{
+  "id": "log-uuid-abcd",
+  "event": "document.state_updated",
+  "url": "https://hooks.example.com/wraft-events",
+  "http_method": "POST",
+  "response_status": 200,
+  "execution_time_ms": 143,
+  "success": true,
+  "error_message": null,
+  "attempt_number": 1,
+  "triggered_at": "2024-01-15T14:32:10Z"
+}
+```
+
+<Note>
+  Wraft retains webhook logs for 90 days by default, after which they are automatically cleaned up.
+</Note>
+
+---
+
+## Webhook Statistics
+
+Retrieve aggregated performance metrics for a webhook over the past 30 days.
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id}/stats \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+```json Response
+{
+  "total_requests": 248,
+  "successful_requests": 241,
+  "failed_requests": 7,
+  "success_rate": 97.18,
+  "average_response_time_ms": 187.4,
+  "period_days": 30
+}
+```
+
+---
+
+## CRUD Operations
+
+<Tabs>
+  <Tab title="List">
+    ```bash cURL
+    curl -X GET "https://your-wraft-instance.com/api/v1/webhooks?page=1" \
+      -H "Authorization: Bearer <your_jwt_token>"
+    ```
+  </Tab>
+  <Tab title="Show">
+    ```bash cURL
+    curl -X GET https://your-wraft-instance.com/api/v1/webhooks/{id} \
+      -H "Authorization: Bearer <your_jwt_token>"
+    ```
+  </Tab>
+  <Tab title="Update">
+    ```bash cURL
+    curl -X PUT https://your-wraft-instance.com/api/v1/webhooks/{id} \
+      -H "Authorization: Bearer <your_jwt_token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Updated Notifier",
+        "url": "https://hooks.example.com/wraft-v2",
+        "events": ["document.completed", "pipeline.failed"]
+      }'
+    ```
+  </Tab>
+  <Tab title="Delete">
+    ```bash cURL
+    curl -X DELETE https://your-wraft-instance.com/api/v1/webhooks/{id} \
+      -H "Authorization: Bearer <your_jwt_token>"
+    ```
+    Returns `204 No Content` on success.
+  </Tab>
+</Tabs>
+
+---
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="List Webhooks" icon="list">
+    `GET /api/v1/webhooks`
+  </Card>
+  <Card title="Create Webhook" icon="plus">
+    `POST /api/v1/webhooks`
+  </Card>
+  <Card title="Show Webhook" icon="eye">
+    `GET /api/v1/webhooks/:id`
+  </Card>
+  <Card title="Update Webhook" icon="pen-to-square">
+    `PUT /api/v1/webhooks/:id`
+  </Card>
+  <Card title="Delete Webhook" icon="trash">
+    `DELETE /api/v1/webhooks/:id`
+  </Card>
+  <Card title="Toggle Status" icon="toggle-on">
+    `PATCH /api/v1/webhooks/:id/toggle`
+  </Card>
+  <Card title="Test Webhook" icon="flask">
+    `POST /api/v1/webhooks/:id/test`
+  </Card>
+  <Card title="Webhook Events" icon="bolt">
+    `GET /api/v1/webhooks/events`
+  </Card>
+  <Card title="Webhook Logs" icon="scroll">
+    `GET /api/v1/webhooks/:id/logs`
+  </Card>
+  <Card title="All Logs" icon="database">
+    `GET /api/v1/webhooks/logs`
+  </Card>
+  <Card title="Webhook Stats" icon="chart-bar">
+    `GET /api/v1/webhooks/:id/stats`
+  </Card>
+</CardGroup>

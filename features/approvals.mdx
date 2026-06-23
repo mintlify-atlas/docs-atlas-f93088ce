@@ -1,0 +1,187 @@
+---
+title: "Approval Systems: Review Gates for Document Workflows"
+sidebarTitle: "Approvals"
+description: "Add review gates to workflows with Approval Systems that require a designated approver to act before a document advances to its next flow state."
+---
+
+Approval Systems provide a formal review gate inside document workflows. While Flow States move a document through its lifecycle, an Approval System adds a designated approver who must explicitly approve or reject the document before it can advance. This is essential for regulated documents — contracts, policies, or financial sign-offs — where automated state transitions alone are not sufficient.
+
+## How Approvals Differ from State Transitions
+
+A Flow State transition is mechanical: a document moves from state A to state B when a condition is met or an action is taken. An Approval System sits on top of this: it requires a named user (the approver) to review and act on the document while it occupies a specific `pre_state`. Only after the approver takes action does the document advance to the `post_state`.
+
+```
+Document in pre_state (e.g., "In Review")
+         │
+         ▼
+  Approval System checks: is there a pending approval?
+         │
+    ┌────┴────┐
+    │         │
+  Approve   Reject
+    │         │
+    ▼         ▼
+post_state  stays in pre_state
+(e.g.,       (or moves to
+"Approved")   rejected state)
+```
+
+<Note>
+  An Approval System is attached to a Flow and references two states from that flow: `pre_state_id` (the state that triggers the approval check) and `post_state_id` (the state the document advances to after approval).
+</Note>
+
+## Creating an Approval System
+
+`POST /api/v1/approval_systems`
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/approval_systems \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Legal Sign-off",
+    "pre_state_id": "state-uuid-in-review",
+    "post_state_id": "state-uuid-approved",
+    "approver_id": "user-uuid-legal-lead",
+    "flow_id": "flow-uuid-contract-workflow"
+  }'
+```
+
+```json Response
+{
+  "id": "approval-system-uuid",
+  "name": "Legal Sign-off",
+  "pre_state": {
+    "id": "state-uuid-in-review",
+    "state": "In Review",
+    "order": 2
+  },
+  "post_state": {
+    "id": "state-uuid-approved",
+    "state": "Approved",
+    "order": 3
+  },
+  "approver": {
+    "id": "user-uuid-legal-lead",
+    "name": "Alex Chen"
+  },
+  "flow": {
+    "id": "flow-uuid-contract-workflow",
+    "name": "Contract Workflow"
+  }
+}
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string">
+  A descriptive label for this approval system (e.g., "Legal Sign-off", "Finance Review").
+</ParamField>
+
+<ParamField body="pre_state_id" type="string" required>
+  The UUID of the flow state that places the document into the approval queue.
+</ParamField>
+
+<ParamField body="post_state_id" type="string" required>
+  The UUID of the flow state the document moves to after the approver approves.
+</ParamField>
+
+<ParamField body="approver_id" type="string" required>
+  The UUID of the user who must review and act on documents in this approval system.
+</ParamField>
+
+<ParamField body="flow_id" type="string" required>
+  The UUID of the Flow this approval system is attached to.
+</ParamField>
+
+## Instance Approvals
+
+When a document enters the `pre_state` of an Approval System, an **Instance Approval System** record is created, linking the document instance to the approval system. The designated approver is notified and the document waits in that state until an action is taken.
+
+### Viewing Pending Approvals
+
+Approvers can see all documents awaiting their review:
+
+```bash cURL
+# All pending approvals for the current user
+GET /api/v1/users/me/instances_to_approve?page=1
+
+# All instance approvals for a specific user
+GET /api/v1/users/:user_id/instance_approval_systems?page=1
+```
+
+### Approving a Document
+
+`POST /api/v1/contents/:id/approve`
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/contents/:id/approve \
+  -H "Authorization: Bearer <token>"
+```
+
+On approval, the document advances to the `post_state` defined in the Approval System. If the post-state is the final `completed` state of the flow, a document-completed webhook event is triggered automatically.
+
+### Rejecting a Document
+
+`POST /api/v1/contents/:id/reject`
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/contents/:id/reject \
+  -H "Authorization: Bearer <token>"
+```
+
+On rejection, the document remains in or reverts from the approval state. A document-rejected webhook event fires, and the document's collaborators can be notified.
+
+<Warning>
+  Only the designated `approver` assigned to the Approval System — or a user with `document:review` permission — can approve or reject an instance.
+</Warning>
+
+## Managing Approval Systems
+
+<CardGroup cols={2}>
+  <Card title="List Approval Systems" icon="list">
+    `GET /api/v1/approval_systems`
+
+    Returns a paginated list of all approval systems in your organisation.
+  </Card>
+  <Card title="Show" icon="eye">
+    `GET /api/v1/approval_systems/:id`
+
+    Returns the full approval system with pre-state, post-state, approver, and flow details.
+  </Card>
+  <Card title="Update" icon="pencil">
+    `PUT /api/v1/approval_systems/:id`
+
+    Update the `pre_state_id`, `post_state_id`, `approver_id`, or `name`. The `flow_id` cannot be changed after creation.
+  </Card>
+  <Card title="Delete" icon="trash">
+    `DELETE /api/v1/approval_systems/:id`
+
+    Removes the approval system. Documents already past this checkpoint are unaffected.
+  </Card>
+</CardGroup>
+
+## Integration with Flows
+
+Approval Systems are not standalone — they are bound to a specific Flow. When designing a document workflow:
+
+<Steps>
+  <Step title="Create the Flow and States">
+    Define your document lifecycle states (e.g., Draft → In Review → Approved → Completed) in a Flow.
+  </Step>
+  <Step title="Identify the approval gate state">
+    Pick the state where documents should pause for human review (e.g., "In Review").
+  </Step>
+  <Step title="Create the Approval System">
+    Set `pre_state_id` to the waiting state and `post_state_id` to the next state after approval. Assign an `approver_id` to the responsible reviewer.
+  </Step>
+  <Step title="Attach the Approval System to a Content Type">
+    Associate the Flow (and thus the Approval System) with a Content Type so that all documents of that type follow the approval-gated workflow.
+  </Step>
+</Steps>
+
+<Tip>
+  You can create multiple Approval Systems on the same Flow, each guarding a different state transition — for example, a manager review at "In Review" and a legal review at "Legal Sign-off".
+</Tip>

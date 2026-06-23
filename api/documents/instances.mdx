@@ -1,0 +1,549 @@
+---
+title: "Document Instances API: Create, Manage & Build"
+sidebarTitle: "Instances"
+description: "Full reference for document instance endpoints — create, retrieve, update, delete, build rendered PDFs, advance workflow states, manage versions, and lock documents."
+---
+
+Document instances are the core artifact of Wraft. Each instance is a concrete document generated from a content type: it holds the raw editor markup, a `serialized` map of field values, its workflow state, version history, and the URL of the rendered PDF once built. Every instance belongs to exactly one content type, which determines the layout, theme, and flow applied during rendering.
+
+<Note>
+  All endpoints require a valid bearer token. Obtain one via the authentication API and pass it as `Authorization: Bearer <token>` on every request.
+</Note>
+
+---
+
+## Create an instance
+
+`POST /api/v1/content_types/:c_type_id/contents`
+
+Creates a new document instance under the specified content type. The content type's layout, theme, and flow are resolved automatically. After creation, the instance is indexed in Typesense and any registered webhooks for `document.created` are triggered asynchronously.
+
+**Required permission:** `document:manage`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>
+  UUID of the content type this instance belongs to.
+</ParamField>
+
+### Request body
+
+<ParamField body="raw" type="string" required>
+  Raw editor markup for the document body. This is the canonical source used during PDF rendering.
+</ParamField>
+
+<ParamField body="serialized" type="object">
+  Key/value map of field values corresponding to the content type's defined fields, e.g. `{"title": "Offer for Alice", "start_date": "2024-06-01"}`. Field keys must match the `machine_name` of each content type field.
+</ParamField>
+
+<ParamField body="vendor_id" type="string">
+  UUID of a vendor to associate with this document (optional, used for contract workflows).
+</ParamField>
+
+<ParamField body="doc_settings" type="object">
+  Embedded document-level settings (margins, page orientation overrides, etc.). Defaults to `{}` if omitted.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/contents \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "raw": "Dear [name], we are pleased to offer you the position of [position].",
+    "serialized": {
+      "name": "Alice Johnson",
+      "position": "Senior Engineer",
+      "start_date": "2024-07-01"
+    },
+    "doc_settings": {}
+  }'
+```
+
+```json Response
+{
+  "content": {
+    "id": "c1f2a3b4-0000-0000-0000-000000000001",
+    "instance_id": "OFFLET01",
+    "raw": "Dear Alice Johnson, we are pleased to offer you ...",
+    "serialized": {
+      "name": "Alice Johnson",
+      "position": "Senior Engineer",
+      "start_date": "2024-07-01"
+    },
+    "meta": {},
+    "approval_status": false,
+    "editable": true,
+    "type": 1,
+    "inserted_at": "2024-06-01T10:00:00Z",
+    "updated_at": "2024-06-01T10:00:00Z"
+  },
+  "content_type": { "id": "3fa85f64-...", "name": "Offer Letter", "prefix": "OFFLET" },
+  "state": { "id": "s1", "state": "draft", "order": 1 },
+  "creator": { "id": "u1", "name": "Bob Smith", "email": "bob@example.com" }
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="content" type="object">
+  <Expandable title="content fields">
+    <ResponseField name="id" type="string">UUID of the newly created instance.</ResponseField>
+    <ResponseField name="instance_id" type="string">Human-readable unique ID within the organisation, formed from the content type's prefix (e.g. `OFFLET01`).</ResponseField>
+    <ResponseField name="raw" type="string">Raw markup stored on the instance.</ResponseField>
+    <ResponseField name="serialized" type="object">Map of field name → value.</ResponseField>
+    <ResponseField name="meta" type="object">Arbitrary metadata attached to the instance.</ResponseField>
+    <ResponseField name="approval_status" type="boolean">Whether the instance has been approved in a controlled flow.</ResponseField>
+    <ResponseField name="editable" type="boolean">`false` when the document is locked.</ResponseField>
+    <ResponseField name="type" type="integer">Creation type: `1` = normal, `2` = bulk_build, `3` = pipeline_api, `4` = pipeline_hook.</ResponseField>
+    <ResponseField name="build" type="string">URL of the rendered PDF (populated after a successful build).</ResponseField>
+    <ResponseField name="signed_doc_url" type="string">URL of the signed PDF variant.</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="content_type" type="object">Nested content type summary including `id`, `name`, and `prefix`.</ResponseField>
+<ResponseField name="state" type="object">Current workflow state: `id`, `state` (name), and `order`.</ResponseField>
+<ResponseField name="creator" type="object">User who created the instance.</ResponseField>
+
+---
+
+## List instances for a content type
+
+`GET /api/v1/content_types/:c_type_id/contents`
+
+Returns a paginated list of instances belonging to a given content type. Useful when displaying all documents of the same template type.
+
+**Required permission:** `document:show`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>
+  UUID of the content type.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="page" type="string">
+  Page number (default: `1`).
+</ParamField>
+
+<ParamField query="instance_id" type="string">
+  Filter by the human-readable instance ID (e.g. `OFFLET03`).
+</ParamField>
+
+<ParamField query="creator_id" type="string">
+  Filter by the UUID of the user who created the instances.
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `instance_id`, `instance_id_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/contents?page=1&sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "contents": [
+    {
+      "content": { "id": "c1f2a3b4-...", "instance_id": "OFFLET02", "approval_status": false },
+      "state": { "id": "s1", "state": "draft", "order": 1 },
+      "creator": { "id": "u1", "name": "Bob Smith" }
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 3,
+  "total_entries": 27
+}
+```
+</CodeGroup>
+
+---
+
+## List all instances (organisation-wide)
+
+`GET /api/v1/contents`
+
+Returns a paginated list of every document instance in the authenticated user's organisation, regardless of content type. Supports rich filtering.
+
+**Required permission:** `document:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+<ParamField query="instance_id" type="string">Filter by human-readable instance ID.</ParamField>
+<ParamField query="content_type_name" type="string">Filter by the name of the parent content type.</ParamField>
+<ParamField query="creator_id" type="string">Filter by creator UUID.</ParamField>
+<ParamField query="state" type="string">Filter by workflow state label (e.g. `published`, `draft`, `review`).</ParamField>
+<ParamField query="document_instance_title" type="string">Filter by document instance title stored in `serialized`.</ParamField>
+<ParamField query="status" type="string">Filter by lifecycle status: `expired` or `upcoming`.</ParamField>
+<ParamField query="type" type="string">Filter by document type: `contract` or `document`.</ParamField>
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `instance_id`, `instance_id_desc`, `inserted_at`, `inserted_at_desc`, `expiry_date`, `expiry_date_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/contents?state=draft&type=contract&page=1" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Show an instance
+
+`GET /api/v1/contents/:id`
+
+Returns the full details of a single document instance, including its content type, current state, version list, creator profile, and instance approval systems.
+
+**Required permission:** `document:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the instance.
+</ParamField>
+
+### Query parameters
+
+<ParamField query="version_type" type="string">
+  If provided, loads the instance data from a specific version type (e.g. `build`).
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "content": {
+    "id": "c1f2a3b4-...",
+    "instance_id": "OFFLET01",
+    "raw": "Dear Alice Johnson ...",
+    "serialized": { "name": "Alice Johnson", "position": "Senior Engineer" },
+    "build": "/uploads/OFFLET01/OFFLET01-v3.pdf",
+    "editable": true,
+    "approval_status": false
+  },
+  "content_type": {
+    "id": "3fa85f64-...",
+    "name": "Offer Letter",
+    "fields": [],
+    "layout": { "id": "l1", "name": "Standard Layout" },
+    "flow": { "id": "f1", "name": "HR Flow" },
+    "theme": { "id": "t1", "name": "Corporate Theme" }
+  },
+  "state": { "id": "s1", "state": "review", "order": 2 },
+  "creator": { "id": "u1", "name": "Bob Smith", "email": "bob@example.com" },
+  "versions": [
+    { "id": "v1", "version_number": 1, "current_version": false, "inserted_at": "2024-06-01T10:00:00Z" },
+    { "id": "v2", "version_number": 2, "current_version": true, "inserted_at": "2024-06-02T09:30:00Z" }
+  ],
+  "instance_approval_systems": []
+}
+```
+</CodeGroup>
+
+---
+
+## Update an instance
+
+`PUT /api/v1/contents/:id`
+
+Updates the content of an existing instance and automatically creates a new version snapshot. The Typesense search index is updated asynchronously.
+
+**Required permission:** `document:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance to update.</ParamField>
+
+### Request body
+
+<ParamField body="raw" type="string" required>Updated raw markup.</ParamField>
+<ParamField body="serialized" type="object">Updated field value map.</ParamField>
+<ParamField body="naration" type="string">Optional version narration / change summary (e.g. `"Manager revision round 2"`).</ParamField>
+<ParamField body="vendor_id" type="string">Reassign to a different vendor.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "raw": "Dear Alice, updated offer details follow...",
+    "serialized": { "name": "Alice Johnson", "position": "Lead Engineer" },
+    "naration": "Updated job title after final approval"
+  }'
+```
+</CodeGroup>
+
+---
+
+## Delete an instance
+
+`DELETE /api/v1/contents/:id`
+
+Permanently deletes the instance and removes it from the Typesense index. Any uploaded build documents stored in object storage are also purged. A `document.deleted` webhook event is fired.
+
+**Required permission:** `document:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Build (render) a document
+
+`POST /api/v1/contents/:id/build`
+
+Triggers synchronous PDF rendering of the instance using the layout's configured engine (Typst or LaTeX). On success, the build URL is written to `content.build` and a new `build`-type version is recorded asynchronously. A build history entry is created with timing and exit-code data.
+
+**Required permission:** `document:manage`
+
+<Tip>
+  Building requires the content type's frame mapping to be correctly configured. Ensure the layout has an associated asset (template file) before calling this endpoint.
+</Tip>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance to build.</ParamField>
+
+### Request body
+
+<ParamField body="naration" type="string">Optional narration stored on the resulting build version (e.g. `"Q2 edition"`).</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/build \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "naration": "Final draft" }'
+```
+
+```json Success (200)
+{
+  "id": "c1f2a3b4-...",
+  "instance_id": "OFFLET01",
+  "build": "/uploads/OFFLET01/OFFLET01-v3.pdf",
+  "editable": true
+}
+```
+
+```json Failure (422)
+{
+  "info": "Build failed",
+  "error": "Undefined control sequence \\jobname at line 14",
+  "exit_code": 1
+}
+```
+</CodeGroup>
+
+---
+
+## Advance workflow state
+
+`PATCH /api/v1/contents/:id/states`
+
+Transitions the document instance to a different workflow state. The new state must belong to the same flow as the instance's content type. A `document.state_updated` webhook is fired after a successful transition.
+
+**Required permission:** `document:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance.</ParamField>
+
+### Request body
+
+<ParamField body="state_id" type="string" required>
+  UUID of the target workflow state. Must be a valid state within the content type's flow.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PATCH https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/states \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "state_id": "s2-uuid-here" }'
+```
+</CodeGroup>
+
+---
+
+## Lock or unlock a document
+
+`PATCH /api/v1/contents/:id/lock-unlock`
+
+Toggles the `editable` flag on an instance. When `editable: false` the document is locked and cannot be modified via the editor.
+
+**Required permission:** `document:lock`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance.</ParamField>
+
+### Request body
+
+<ParamField body="editable" type="boolean" required>
+  Pass `false` to lock or `true` to unlock the document.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PATCH https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/lock-unlock \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "editable": false }'
+```
+</CodeGroup>
+
+---
+
+## Update instance metadata
+
+`PUT /api/v1/contents/:id/meta`
+
+Replaces the arbitrary metadata object stored on the instance. Metadata is a free-form JSON object used for contract-specific fields such as `approval_status`, expiry dates, and custom properties.
+
+**Required permission:** `document:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance.</ParamField>
+
+### Request body
+
+<ParamField body="meta" type="object" required>
+  New metadata object. The previous metadata is replaced entirely.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/meta \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "meta": {
+      "approval_status": true,
+      "expiry_date": "2025-06-01",
+      "contract_value": 120000
+    }
+  }'
+```
+
+```json Response
+{
+  "meta": {
+    "approval_status": true,
+    "expiry_date": "2025-06-01",
+    "contract_value": 120000
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## List version history
+
+`GET /api/v1/contents/:id/versions`
+
+Returns a paginated list of all versions saved for an instance. Each version records the serialized content, narration, author, and whether it is the currently active version.
+
+**Required permission:** `document:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance.</ParamField>
+
+### Query parameters
+
+<ParamField query="type" type="string">Filter versions by type (e.g. `build` to show only rendered versions).</ParamField>
+<ParamField query="page" type="string">Page number.</ParamField>
+<ParamField query="sort" type="string">Sort order: `updated_at`, `updated_at_desc`, `inserted_at`, `inserted_at_desc`.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/versions?sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "entries": [
+    {
+      "id": "v2-uuid",
+      "version_number": 2,
+      "naration": "Manager revision",
+      "current_version": true,
+      "author": { "id": "u1", "name": "Bob Smith" },
+      "inserted_at": "2024-06-02T09:30:00Z"
+    },
+    {
+      "id": "v1-uuid",
+      "version_number": 1,
+      "naration": "Initial draft",
+      "current_version": false,
+      "author": { "id": "u1", "name": "Bob Smith" },
+      "inserted_at": "2024-06-01T10:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 2
+}
+```
+</CodeGroup>
+
+### Version response fields
+
+<ResponseField name="entries" type="array">
+  <Expandable title="version item fields">
+    <ResponseField name="id" type="string">UUID of the version record.</ResponseField>
+    <ResponseField name="version_number" type="integer">Sequential version number starting at 1.</ResponseField>
+    <ResponseField name="naration" type="string">Narration / change description supplied at save or build time.</ResponseField>
+    <ResponseField name="current_version" type="boolean">`true` for the version that reflects the current instance content.</ResponseField>
+    <ResponseField name="author" type="object">User who created this version.</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO-8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Restore a version
+
+`POST /api/v1/contents/:id/versions/:version_id/restore`
+
+Restores an instance to the content of a previous version. The instance's `raw` and `serialized` fields are replaced with the version's stored data.
+
+**Required permission:** `document:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the instance.</ParamField>
+<ParamField path="version_id" type="string" required>UUID of the version to restore.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST \
+  "https://api.wraft.com/api/v1/contents/c1f2a3b4-0000-0000-0000-000000000001/versions/v1-uuid/restore" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>

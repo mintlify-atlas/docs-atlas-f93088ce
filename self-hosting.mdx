@@ -1,0 +1,370 @@
+---
+title: "Self-Hosting Wraft on Your Own Infrastructure"
+sidebarTitle: "Self-Hosting"
+description: "Step-by-step instructions for deploying Wraft with Docker Compose or a manual Elixir dev setup, including all required environment variables and service ports."
+---
+
+Wraft is fully open source (AGPLv3) and designed to run on your own servers. You own all your data, documents, and configuration. This guide covers both the recommended Docker Compose path — which bundles every dependency into a single `docker-compose up -d` — and a manual development setup for contributors or teams that need fine-grained control over each service.
+
+<Warning>
+  The default seed credentials (`wraftuser@gmail.com` / `demo@1234`) and the example secret keys in `.env.example` are **not safe for production**. Before exposing any Wraft instance to the internet, generate new values for `SECRET_KEY_BASE`, `GUARDIAN_KEY`, and `CLOAK_KEY`, and change the default admin password. See the [Environment Variables](#environment-variables) section below for generation instructions.
+</Warning>
+
+---
+
+<Tabs>
+  <Tab title="Docker Compose (Recommended)">
+
+    Docker Compose is the fastest way to run a complete Wraft stack. A single command starts the backend API, the React frontend, PostgreSQL, MinIO, and Typesense — all pre-wired to talk to each other.
+
+    ### Prerequisites
+
+    - [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2+
+    - Git
+    - `sudo` access (to add the MinIO host entry)
+
+    <Steps>
+
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/wraft/wraft.git
+        cd wraft
+        ```
+      </Step>
+
+      <Step title="Copy the example environment file">
+        ```bash
+        cp .env.example .env.dev
+        ```
+
+        Open `.env.dev` in your editor and update at minimum:
+
+        - `SECRET_KEY_BASE` — generate with `mix phx.gen.secret`
+        - `GUARDIAN_KEY` — generate with `mix guardian.gen.secret`
+        - `CLOAK_KEY` — generate with `openssl rand -base64 32`
+        - `DEV_DB_USERNAME`, `DEV_DB_PASSWORD`, `DEV_DB_NAME`
+        - `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`
+        - `TYPESENSE_API_KEY`
+      </Step>
+
+      <Step title="Load environment variables into your shell">
+        ```bash
+        source .env.dev
+        ```
+      </Step>
+
+      <Step title="Add the MinIO hostname to /etc/hosts">
+        The backend container resolves MinIO by the hostname `minio`. Add an entry to your host machine so that your browser can also reach MinIO assets directly.
+
+        <CodeGroup>
+          ```bash macOS / Linux
+          echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
+          ```
+
+          ```powershell Windows
+          echo 127.0.0.1 minio >> C:\Windows\System32\drivers\etc\hosts
+          ```
+        </CodeGroup>
+      </Step>
+
+      <Step title="Start all services">
+        ```bash
+        docker-compose up -d
+        ```
+
+        Docker Compose will pull the images (first run only), build the backend container, run database migrations, and start all services. The backend container's startup log will show `[info] Running WraftDocWeb.Endpoint` when the API is ready.
+      </Step>
+
+      <Step title="Open the application">
+        Navigate to [http://localhost:3200](http://localhost:3200) in your browser and sign in with the default credentials:
+
+        ```text
+        Email:    wraftuser@gmail.com
+        Password: demo@1234
+        ```
+
+        The backend API is reachable at [http://localhost:4000](http://localhost:4000) and the Swagger UI at [http://localhost:4000/spec/swaggerui](http://localhost:4000/spec/swaggerui).
+      </Step>
+
+    </Steps>
+
+    ### Services and Ports
+
+    | Service | URL / Address | Notes |
+    |---|---|---|
+    | Frontend | http://localhost:3200 | React / Next.js web app |
+    | Backend API | http://localhost:4000 | Elixir / Phoenix REST API |
+    | Swagger UI | http://localhost:4000/spec/swaggerui | Interactive API reference |
+    | MinIO Console | http://localhost:9001 | Object storage admin UI |
+    | PostgreSQL | localhost:5433 | Database (non-standard port to avoid conflicts) |
+    | Typesense | localhost:8108 | Search engine HTTP API |
+
+    ### Stopping and Cleaning Up
+
+    ```bash
+    # Stop all containers, keep volumes (data persists)
+    docker-compose down
+
+    # Stop all containers and delete all data volumes
+    docker-compose down -v
+    ```
+
+  </Tab>
+
+  <Tab title="Manual / Dev Setup">
+
+    The manual setup gives you a full local development environment with hot-reloading, `iex` shell access, and direct control over every service. It is the recommended path for contributors to the Wraft backend.
+
+    ### Prerequisites
+
+    Install the following tools before starting:
+
+    | Tool | Version | Notes |
+    |---|---|---|
+    | Elixir | 1.19.2 | Via asdf (see below) |
+    | Erlang/OTP | 27.0.1 | Via asdf |
+    | PostgreSQL | 18 (recommended) | Any recent version works |
+    | MinIO | Latest | S3-compatible object storage |
+    | Pandoc | 3.9.0.2 | DOCX conversion |
+    | ImageMagick | Latest | Image asset processing |
+    | LaTeX | TeX Live / MacTeX | PDF rendering via XeLaTeX |
+    | Typst | 0.14.2 | Primary PDF rendering engine |
+    | Java | 21 | PDF digital signing |
+    | Rust toolchain | Stable | Native NIF dependencies |
+
+    <Steps>
+
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/wraft/wraft.git
+        cd wraft
+        ```
+      </Step>
+
+      <Step title="Install Elixir and Erlang with asdf">
+        The exact versions are pinned in `.tool-versions`. Install [asdf](https://asdf-vm.com/#/core-manage-asdf-vm) first, then add the Elixir and Erlang plugins:
+
+        ```bash
+        asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git
+        asdf plugin add elixir https://github.com/asdf-vm/asdf-elixir.git
+        asdf install
+        ```
+
+        <Note>
+          On Ubuntu, install `inotify-tools` for file-system watching (`sudo apt install inotify-tools`). On macOS, use `brew install inotify-tools`.
+        </Note>
+      </Step>
+
+      <Step title="Install and start PostgreSQL">
+        Download PostgreSQL for your OS from [postgresql.org/download](https://www.postgresql.org/download/). PostgreSQL 18 is recommended to match the Docker image. Verify your installation:
+
+        ```bash
+        postgres -V
+        psql -h 127.0.0.1 -p 5432 -U postgres postgres
+        ```
+      </Step>
+
+      <Step title="Install and start MinIO">
+        Download MinIO from [min.io](https://min.io/docs/minio/linux/index.html) and start a local server:
+
+        ```bash
+        minio server ~/minio --console-address :9001
+        ```
+
+        The MinIO API will be available at `http://127.0.0.1:9000` and the console at `http://127.0.0.1:9001`.
+      </Step>
+
+      <Step title="Install Pandoc">
+        <CodeGroup>
+          ```bash macOS
+          brew install pandoc
+          ```
+
+          ```bash Linux
+          # Download the .deb from https://github.com/jgm/pandoc/releases/tag/3.9.0.2
+          sudo dpkg -i pandoc-3.9.0.2-amd64.deb
+          ```
+        </CodeGroup>
+      </Step>
+
+      <Step title="Install ImageMagick">
+        <CodeGroup>
+          ```bash macOS
+          brew install imagemagick
+          ```
+
+          ```bash Linux
+          sudo apt update && sudo apt install imagemagick
+          ```
+        </CodeGroup>
+      </Step>
+
+      <Step title="Install LaTeX">
+        <CodeGroup>
+          ```bash macOS
+          # Download MacTeX from https://www.tug.org/mactex/
+          # Then verify:
+          xelatex --version
+          ```
+
+          ```bash Linux
+          sudo apt-get install texlive-full
+          ```
+        </CodeGroup>
+      </Step>
+
+      <Step title="Install Typst 0.14.2">
+        Download the Typst 0.14.2 binary from the [Typst GitHub releases](https://github.com/typst/typst/releases) page and place it on your `PATH`.
+
+        ```bash
+        typst --version
+        # typst 0.14.2
+        ```
+      </Step>
+
+      <Step title="Install and start Typesense">
+        Download Typesense from [typesense.org](https://typesense.org/docs/guide/install-typesense.html) or its [GitHub releases](https://github.com/typesense/typesense/releases) and start it:
+
+        ```bash
+        mkdir -p ~/typesense-data
+        typesense-server \
+          --data-dir ~/typesense-data \
+          --api-key=your-api-key-here
+        ```
+
+        The default port is `8108`.
+      </Step>
+
+      <Step title="Configure environment variables">
+        Copy the example environment file and update values to match your local services:
+
+        ```bash
+        cp .env.example .env.dev
+        source .env.dev
+        ```
+
+        The key variables to set for a local dev environment are:
+
+        ```bash
+        DATABASE_URL=postgres://postgres:postgres@localhost:5432/wraft-dev-db
+        MINIO_URL=127.0.0.1:9000
+        MINIO_HOST=127.0.0.1
+        TYPESENSE_HOST=localhost
+        TYPESENSE_API_KEY=your-api-key-here
+        SELF_HOSTED=true
+        ```
+      </Step>
+
+      <Step title="Set up the project and start the server">
+        Run the project setup task (installs dependencies, creates and migrates the database, seeds initial data):
+
+        ```bash
+        mix setup
+        ```
+
+        Then start the Phoenix server. The interactive shell variant is recommended during development:
+
+        ```bash
+        # With interactive Elixir shell
+        iex -S mix phx.server
+
+        # Without interactive shell
+        source .env.dev && mix phx.server
+        ```
+
+        The API will be available at [http://localhost:4000](http://localhost:4000).
+      </Step>
+
+      <Step title="Set up the frontend (optional)">
+        The frontend is a separate repository. Clone it alongside the backend:
+
+        ```bash
+        cd ..
+        git clone https://github.com/wraft/wraft-frontend.git
+        cd wraft-frontend
+        ```
+
+        Follow the `README.md` in the frontend repository for setup instructions.
+      </Step>
+
+    </Steps>
+
+    ### Default Credentials
+
+    After `mix setup`, the database is seeded with a default user:
+
+    ```text
+    Email:    wraftuser@gmail.com
+    Password: demo@1234
+    ```
+
+  </Tab>
+</Tabs>
+
+---
+
+## Environment Variables
+
+The following table documents every significant variable from `.env.example`. Copy this file to `.env.dev` and populate it before starting Wraft.
+
+### Application Secrets
+
+| Variable | Description | How to Generate |
+|---|---|---|
+| `SECRET_KEY_BASE` | Phoenix endpoint secret — used to sign cookies and tokens | `mix phx.gen.secret` |
+| `GUARDIAN_KEY` | JWT signing key used by Guardian for API authentication | `mix guardian.gen.secret` |
+| `CLOAK_KEY` | AES encryption key for sensitive database fields | `openssl rand -base64 32` |
+
+### Application URLs
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `FRONTEND_URL` | `http://localhost:3000` | Public URL of the Wraft frontend |
+| `BACKEND_URL` | `http://localhost:4000` | Public URL of the Wraft API server |
+| `SELF_HOSTED` | `true` | Set to `true` to disable cloud-only billing and plan features |
+
+### Database
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/wraft-dev-db` | Full PostgreSQL connection URL (used in production / manual setup) |
+| `DEV_DB_USERNAME` | `postgres` | PostgreSQL username (Docker Compose only) |
+| `DEV_DB_PASSWORD` | `postgres` | PostgreSQL password (Docker Compose only) |
+| `DEV_DB_NAME` | `wraft-dev-db` | Database name (Docker Compose only) |
+
+### MinIO Object Storage
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `MINIO_URL` | `127.0.0.1:9000` | MinIO API endpoint (host:port) |
+| `MINIO_HOST` | `127.0.0.1` | MinIO hostname |
+| `MINIO_PORT` | `9000` | MinIO API port |
+| `MINIO_BUCKET` | `wraft` | Primary storage bucket name |
+| `MINIO_ROOT_USER` | `minioadmin` | MinIO root / admin username |
+| `MINIO_ROOT_PASSWORD` | `minioadmin` | MinIO root / admin password |
+
+### Typesense Search
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `TYPESENSE_API_KEY` | `xyz` | API key for the Typesense server |
+| `TYPESENSE_HOST` | `localhost` | Typesense server hostname |
+| `TYPESENSE_PORT` | `8108` | Typesense server port |
+| `TYPESENSE_SCHEME` | `http` | `http` or `https` |
+
+### Email
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `RESEND_API_KEY` | `your_resend_api_key_here` | API key for the Resend email service |
+| `WRAFT_HOSTNAME` | `example.com` | Hostname used in outbound email links |
+
+### PDF Rendering
+
+| Variable | Example Value | Description |
+|---|---|---|
+| `XELATEX_PATH` | `xelatex` | Absolute or relative path to the `xelatex` binary |
+
+<Note>
+  When running with Docker Compose, service hostnames such as `minio` and `typesense` are resolved automatically inside the Docker network. The `MINIO_HOST` and `TYPESENSE_HOST` values in the backend service's environment block are overridden by `docker-compose.yml` to point to the container service names.
+</Note>

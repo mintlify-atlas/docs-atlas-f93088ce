@@ -1,0 +1,89 @@
+---
+title: "Wraft: Open-Source Document Lifecycle Management"
+sidebarTitle: "Introduction"
+description: "Discover how Wraft helps businesses author, approve, sign, and distribute structured documents—from contracts to legal letters—using open formats and a powerful API."
+---
+
+Wraft is an open-source Document Lifecycle Management platform built with Elixir and Phoenix. It gives organisations complete control over their most important documents—from the first draft through collaborative editing, multi-stage approval workflows, e-signatures, and final distribution. Everything in Wraft is built on open formats (Markdown and JSON), so your content remains accessible and future-proof regardless of how your tooling evolves.
+
+## Who Wraft Is For
+
+Wraft is designed for teams that produce high volumes of structured business content: legal teams managing contracts and compliance letters, operations teams issuing official correspondence, HR departments creating offer letters and policy documents, and developers who want a programmable document engine behind their own products. Rather than forcing authors into a generic word processor, Wraft lets you encode your organisation's document standards into reusable templates and enforce them through automated pipelines.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Structured Templates" icon="file-lines">
+    Define content types with typed fields and attach them to Typst or LaTeX layout templates. Every document produced from a content type is guaranteed to follow the same structure and branding.
+  </Card>
+  <Card title="Typst & LaTeX Rendering" icon="code">
+    Render pixel-perfect PDFs using Typst 0.14.2 or XeLaTeX. Wraft ships both engines and selects the right one based on the layout attached to a content type.
+  </Card>
+  <Card title="Approval Workflows" icon="check-circle">
+    Model multi-stage review processes with Flows and States. Assign approvers per state, track approval history on every document, and enforce sequential sign-off before a document can be distributed.
+  </Card>
+  <Card title="E-Signatures" icon="pen-nib">
+    Add counterparties to a document, request signatures, and append cryptographic PDF signatures powered by a Java 21 signing engine. Integrations with DocuSign and Documenso are also available.
+  </Card>
+  <Card title="AI Tools & Prompts" icon="wand-magic-sparkles">
+    Attach configurable AI models and prompt templates to your workflow. The `/api/v1/ai/generate` endpoint lets you run AI-assisted drafting or content suggestions directly inside a document instance.
+  </Card>
+  <Card title="Pipelines" icon="sitemap">
+    Automate multi-step document processing with Pipelines. Each pipeline can chain Pipe Stages together and trigger downstream builds, notifications, or external system calls via webhooks.
+  </Card>
+  <Card title="Full-Text Search" icon="magnifying-glass">
+    Typesense powers fast, typo-tolerant search across all document instances, content types, and data templates in your organisation.
+  </Card>
+  <Card title="Cloud Storage & Import" icon="cloud-arrow-up">
+    Store assets in MinIO (S3-compatible object storage). Import documents directly from Google Drive, Dropbox, or OneDrive through built-in cloud integration flows.
+  </Card>
+</CardGroup>
+
+## Core Concepts
+
+Understanding a few building blocks will help you navigate the API and the UI:
+
+- **Layout** — A Typst or LaTeX template file that controls the visual appearance of a rendered PDF. Layouts are reusable across many content types.
+- **Theme** — A set of typography and colour settings applied to a layout at render time.
+- **Content Type** — A schema that binds together a layout, a theme, and an approval flow. It declares the typed fields that authors must fill when creating a document.
+- **Instance (Document)** — A concrete document created from a content type. Instances hold field values, move through workflow states, accumulate comments, and can be built into a PDF at any point.
+- **Flow & States** — A flow is an ordered sequence of states (e.g. Draft → Legal Review → Approved → Signed). States can have assigned approvers and transition rules.
+- **Pipeline** — An automated processing chain that can bulk-build documents, trigger external services, or chain multiple content type builds together.
+- **Data Template** — A Markdown body template pre-filled with default content, attached to a content type to speed up authoring.
+
+## Architecture Overview
+
+Wraft's backend is written in **Elixir 1.19.2** on top of the **Phoenix** web framework. The stack is designed for reliability and extensibility:
+
+| Component | Technology | Purpose |
+|---|---|---|
+| API Server | Elixir / Phoenix | REST API, real-time channels, background jobs (Oban) |
+| Database | PostgreSQL 18 | Relational data, audit logs, version history |
+| Object Storage | MinIO (S3-compatible) | Document assets, uploaded files, rendered PDFs |
+| Search | Typesense 27.1 | Full-text search across documents and templates |
+| PDF Rendering | Typst 0.14.2 / XeLaTeX | High-quality typeset PDF generation |
+| Document Conversion | Pandoc 3.9.0.2 | DOCX import and format conversion |
+| Image Processing | ImageMagick | Asset manipulation and preview generation |
+| PDF Signing | Java 21 | Cryptographic digital signatures on PDF documents |
+| Native Extensions | Rust NIFs | Performance-critical native operations |
+| Frontend | React (Next.js) | Web application served separately |
+
+The backend exposes a versioned REST API under `/api/v1` with JWT authentication via Guardian. OpenAPI documentation is auto-generated and available at `/spec/swaggerui` on any running instance.
+
+## Deployment Options
+
+<CardGroup cols={2}>
+  <Card title="Wraft Cloud" icon="cloud" href="https://wraft.app">
+    The fastest way to start. Sign up at [wraft.app](https://wraft.app), create your organisation, and begin creating documents immediately — no infrastructure to manage.
+  </Card>
+  <Card title="Self-Hosted" icon="server" href="/self-hosting">
+    Run Wraft on your own servers using Docker Compose or a manual Elixir/Mix setup. Full control over data residency, backups, and configuration. See the [Self-Hosting guide](/self-hosting) to get started.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+- Follow the [Quickstart guide](/quickstart) to make your first API call in minutes.
+- Read the [Self-Hosting guide](/self-hosting) to deploy Wraft on your own infrastructure.
+- Explore the interactive API reference at `http://localhost:4000/spec/swaggerui` on any running instance.
+- Join the [Wraft Discord community](https://discord.gg/qwuquGD5ft) to ask questions and share feedback.

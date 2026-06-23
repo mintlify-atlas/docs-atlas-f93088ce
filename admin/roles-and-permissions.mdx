@@ -1,0 +1,263 @@
+---
+title: "Roles and Permissions: Wraft RBAC Access Control Guide"
+sidebarTitle: "Roles & Permissions"
+description: "Configure role-based access control in Wraft. Assign permission strings to custom roles, control Content Type access, and manage user assignments."
+---
+
+Wraft uses Role-Based Access Control (RBAC) to govern what actions users can perform within an organisation. A role is a named set of permission strings scoped to a single organisation. A user can hold multiple roles simultaneously, and their effective permissions are the union of all permissions from all assigned roles.
+
+---
+
+## Default Roles
+
+When a new organisation is created, Wraft automatically provisions two roles:
+
+<CardGroup cols={2}>
+  <Card title="superadmin" icon="crown">
+    Has access to all permissions in the organisation. The creator of the organisation is automatically assigned this role. There must always be at least one superadmin — the last superadmin cannot be unassigned.
+  </Card>
+  <Card title="editor" icon="pen-nib">
+    A pre-configured role with a standard set of document-editing permissions including `document:manage`, `document:review`, `document:lock`, `flow:manage`, `layout:manage`, `theme:manage`, `pipeline:manage`, and others. Suitable for regular team members.
+  </Card>
+</CardGroup>
+
+<Note>
+  The `superadmin` role itself stores an empty `permissions` array in the database. At runtime, Wraft resolves it to the full set of all permissions defined in the system. You cannot delete the `superadmin` role.
+</Note>
+
+---
+
+## Permission Model
+
+Permissions are `resource:action` strings. Every API endpoint is guarded by a specific permission string that must be present in the authenticated user's effective permission set.
+
+### All Available Permissions
+
+| Permission String | Resource | Action | Description |
+|---|---|---|---|
+| `document:show` | Document | Show | View documents |
+| `document:manage` | Document | Manage | Create and edit documents |
+| `document:delete` | Document | Delete | Delete documents |
+| `document:review` | Document | Review | Approve or reject documents in a flow |
+| `document:lock` | Document | Lock | Lock a document to prevent editing |
+| `flow:show` | Flow | Show | View flows and states |
+| `flow:manage` | Flow | Manage | Create and edit flows |
+| `flow:delete` | Flow | Delete | Delete flows |
+| `role:show` | Role | Show | View roles |
+| `role:manage` | Role | Manage | Create, update, and assign roles |
+| `role:delete` | Role | Delete | Delete roles |
+| `webhook:show` | Webhook | Show | View webhooks and logs |
+| `webhook:manage` | Webhook | Manage | Create, update, and test webhooks |
+| `webhook:delete` | Webhook | Delete | Delete webhooks |
+| `api_key:show` | API Key | Show | View API key metadata |
+| `api_key:manage` | API Key | Manage | Create and toggle API keys |
+| `api_key:delete` | API Key | Delete | Delete API keys |
+| `members:show` | Members | Show | View organisation members |
+| `members:manage` | Members | Manage | Invite and remove members |
+| `workspace:update` | Workspace | Update | Update organisation settings |
+| `workspace:delete` | Workspace | Delete | Delete the organisation |
+| `layout:show` | Layout | Show | View layouts |
+| `layout:manage` | Layout | Manage | Create and edit layouts |
+| `layout:delete` | Layout | Delete | Delete layouts |
+| `theme:show` | Theme | Show | View themes |
+| `theme:manage` | Theme | Manage | Create and edit themes |
+| `theme:delete` | Theme | Delete | Delete themes |
+| `pipeline:show` | Pipeline | Show | View pipelines |
+| `pipeline:manage` | Pipeline | Manage | Create and edit pipelines |
+| `pipeline:delete` | Pipeline | Delete | Delete pipelines |
+| `template:show` | Template | Show | View data templates |
+| `template:manage` | Template | Manage | Create and edit data templates |
+| `template:delete` | Template | Delete | Delete data templates |
+| `form:show` | Form | Show | View forms |
+| `form:manage` | Form | Manage | Create and edit forms |
+| `form:delete` | Form | Delete | Delete forms |
+| `block:show` | Block | Show | View blocks |
+| `block:manage` | Block | Manage | Create and edit blocks |
+| `block:delete` | Block | Delete | Delete blocks |
+| `vendor:show` | Vendor | Show | View vendors |
+| `vendor:manage` | Vendor | Manage | Create and edit vendors |
+| `vendor:delete` | Vendor | Delete | Delete vendors |
+| `integration:show` | Integration | Show | View integrations |
+| `integration:manage` | Integration | Manage | Manage integrations |
+| `payment:show` | Payment | Show | View payment records |
+
+---
+
+## Listing Roles
+
+Retrieve all roles in the current organisation. Supports optional filtering by `name` and sorting by `name` or `name_desc`.
+
+```bash cURL
+curl -X GET "https://your-wraft-instance.com/api/v1/roles?sort=name" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+```json Response
+[
+  {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "superadmin",
+    "permissions": [],
+    "organisation": { "id": "org-uuid", "name": "Acme Corporation" },
+    "user_count": 2
+  },
+  {
+    "id": "b2c3d4e5-f6a7-8901-bcde-f01234567891",
+    "name": "editor",
+    "permissions": ["document:manage", "document:show", "flow:manage"],
+    "organisation": { "id": "org-uuid", "name": "Acme Corporation" },
+    "user_count": 5
+  }
+]
+```
+
+Requires the `role:show` permission.
+
+---
+
+## Creating a Custom Role
+
+<Steps>
+  <Step title="Determine the permissions the role needs">
+    Choose from the permission strings listed in the table above. A role stores permissions as an array of strings.
+  </Step>
+  <Step title="POST to create the role">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://your-wraft-instance.com/api/v1/roles \
+      -H "Authorization: Bearer <your_jwt_token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "document_reviewer",
+        "permissions": [
+          "document:show",
+          "document:review",
+          "flow:show"
+        ]
+      }'
+    ```
+
+    ```json Response
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-012345678912",
+      "name": "document_reviewer",
+      "permissions": ["document:show", "document:review", "flow:show"],
+      "organisation": {
+        "id": "org-uuid",
+        "name": "Acme Corporation"
+      },
+      "user_count": 0
+    }
+    ```
+    </CodeGroup>
+
+    Requires the `role:manage` permission.
+  </Step>
+</Steps>
+
+---
+
+## Assigning a Role to a User
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/users/{user_id}/roles/{role_id} \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+Wraft verifies that the target user is a member of the current organisation before assigning the role. After a successful assignment, the user receives an in-app notification.
+
+Requires the `role:manage` permission.
+
+---
+
+## Unassigning a Role
+
+```bash cURL
+curl -X DELETE https://your-wraft-instance.com/api/v1/users/{user_id}/roles/{role_id} \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+<Warning>
+  Two safety rules apply when unassigning roles:
+  1. You cannot remove the `superadmin` role if the user is the only superadmin in the organisation.
+  2. You cannot remove a role if it is the user's only role — every member must hold at least one role.
+</Warning>
+
+---
+
+## Listing Available Permissions
+
+Retrieve all permissions defined in the system, optionally filtered by `name` or `resource`. The response is grouped by resource.
+
+```bash cURL
+curl -X GET "https://your-wraft-instance.com/api/v1/permissions?resource=Document" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+```json Response
+{
+  "Document": [
+    { "id": "perm-uuid-1", "name": "document:show", "resource": "Document", "action": "Show" },
+    { "id": "perm-uuid-2", "name": "document:manage", "resource": "Document", "action": "Manage" },
+    { "id": "perm-uuid-3", "name": "document:delete", "resource": "Document", "action": "Delete" },
+    { "id": "perm-uuid-4", "name": "document:review", "resource": "Document", "action": "Review" },
+    { "id": "perm-uuid-5", "name": "document:lock", "resource": "Document", "action": "Lock" }
+  ]
+}
+```
+
+---
+
+## Content Type Roles
+
+Content Type Roles restrict which roles have access to create documents from a specific Content Type. This is useful when certain document types (e.g., contracts or legal agreements) should only be accessible to authorised roles.
+
+### Assign a Role to a Content Type
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/content_type_roles \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_type_id": "ct-uuid-here",
+    "role_id": "role-uuid-here"
+  }'
+```
+
+### Remove a Role from a Content Type
+
+```bash cURL
+curl -X DELETE https://your-wraft-instance.com/api/v1/content_type_roles/{content_type_role_id} \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+---
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="List Roles" icon="list">
+    `GET /api/v1/roles`
+  </Card>
+  <Card title="Create Role" icon="plus">
+    `POST /api/v1/roles`
+  </Card>
+  <Card title="Show Role" icon="eye">
+    `GET /api/v1/roles/:id`
+  </Card>
+  <Card title="Update Role" icon="pen-to-square">
+    `PUT /api/v1/roles/:id`
+  </Card>
+  <Card title="Delete Role" icon="trash">
+    `DELETE /api/v1/roles/:id`
+  </Card>
+  <Card title="Assign Role" icon="user-plus">
+    `POST /api/v1/users/:user_id/roles/:role_id`
+  </Card>
+  <Card title="Unassign Role" icon="user-minus">
+    `DELETE /api/v1/users/:user_id/roles/:role_id`
+  </Card>
+  <Card title="List Permissions" icon="shield">
+    `GET /api/v1/permissions`
+  </Card>
+</CardGroup>

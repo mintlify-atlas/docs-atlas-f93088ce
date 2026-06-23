@@ -1,0 +1,164 @@
+---
+title: "Data Templates: Pre-filled Document Starters in Wraft"
+sidebarTitle: "Templates"
+description: "Use Data Templates to save and reuse pre-filled field values for a Content Type, accelerating document creation and enabling bulk import via CSV."
+---
+
+Data Templates are saved sets of field values tied to a specific Content Type. Instead of filling in every field from scratch each time you create a document, you define a template once — with a title, a title template, and serialized field data — and use it as the starting point for new documents. Templates are scoped to your organisation and indexed for fast search via Typesense.
+
+## What Is a Data Template?
+
+A Data Template belongs to a Content Type and captures a `title`, a `title_template` (used to derive document titles dynamically), and a `data` field that holds the pre-filled content. An optional `serialized` map stores structured field data. When you create a new document instance, you pick a Data Template to pre-populate the fields, saving manual entry time.
+
+<Note>
+  Data Templates are scoped to their parent Content Type. A template created under the **Employment Contract** Content Type cannot be used with the **Invoice** Content Type.
+</Note>
+
+## Creating a Data Template
+
+Send a `POST` request to the content-type-scoped endpoint. The `title`, `title_template`, and `data` fields are required.
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/content_types/:c_type_id/data_templates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Standard NDA",
+    "title_template": "NDA - {{party_name}} - {{date}}",
+    "data": "This Non-Disclosure Agreement is entered into by {{party_name}}...",
+    "serialized": {
+      "party_name": "",
+      "date": "",
+      "governing_law": "California"
+    }
+  }'
+```
+
+```json Response
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "Standard NDA",
+  "title_template": "NDA - {{party_name}} - {{date}}",
+  "data": "This Non-Disclosure Agreement is entered into by {{party_name}}...",
+  "serialized": {
+    "party_name": "",
+    "date": "",
+    "governing_law": "California"
+  },
+  "content_type": {
+    "id": "...",
+    "name": "NDA"
+  }
+}
+```
+
+</CodeGroup>
+
+<ParamField body="title" type="string" required>
+  A human-readable name for the template (e.g., "Standard NDA").
+</ParamField>
+
+<ParamField body="title_template" type="string" required>
+  A template string used to generate document titles. Supports `{{field_name}}` interpolation.
+</ParamField>
+
+<ParamField body="data" type="string" required>
+  The pre-filled document body content, typically containing placeholder tokens.
+</ParamField>
+
+<ParamField body="serialized" type="object">
+  A map of field names to their default values for structured field pre-population.
+</ParamField>
+
+## Listing Data Templates
+
+<Tabs>
+  <Tab title="By Content Type">
+    Retrieve all templates under a specific Content Type. Supports pagination, title filtering, and sorting.
+
+    ```bash cURL
+    GET /api/v1/content_types/:c_type_id/data_templates?page=1&title=NDA&sort=inserted_at_desc
+    ```
+
+    **Sort keys:** `inserted_at`, `inserted_at_desc`, `updated_at`, `updated_at_desc`
+  </Tab>
+  <Tab title="All in Organisation">
+    Retrieve all templates across every Content Type in your organisation.
+
+    ```bash cURL
+    GET /api/v1/data_templates?page=1&title=NDA
+    ```
+  </Tab>
+</Tabs>
+
+## Show, Update, and Delete
+
+Standard CRUD operations operate on `/api/v1/data_templates/:id`. The template must belong to a Content Type within your organisation.
+
+<CardGroup cols={3}>
+  <Card title="Show" icon="eye">
+    `GET /api/v1/data_templates/:id`
+
+    Returns the full template with its creator and associated Content Type fields.
+  </Card>
+  <Card title="Update" icon="pencil">
+    `PUT /api/v1/data_templates/:id`
+
+    Accepts the same fields as create. Updates are indexed in Typesense automatically.
+  </Card>
+  <Card title="Delete" icon="trash">
+    `DELETE /api/v1/data_templates/:id`
+
+    Removes the template and deindexes it from search. Requires `template:delete` permission.
+  </Card>
+</CardGroup>
+
+## Bulk Import via CSV
+
+When you need to create many templates at once, use the bulk import endpoint. Wraft accepts a CSV file and a field-mapping object, then enqueues a background job (via Oban) to process each row asynchronously.
+
+<Steps>
+  <Step title="Prepare your CSV">
+    Each row in the CSV represents one Data Template. The column headers must match the keys you specify in the `mapping` parameter.
+
+    ```csv
+    name,title_template,governing_law
+    Standard NDA,NDA - {{name}},California
+    Enterprise NDA,Enterprise NDA - {{name}},New York
+    ```
+  </Step>
+  <Step title="Submit the bulk import request">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/content_types/:c_type_id/data_templates/bulk_import \
+      -H "Authorization: Bearer <token>" \
+      -F "file=@templates.csv" \
+      -F 'mapping={"name":"title","title_template":"title_template","governing_law":"serialized.governing_law"}'
+    ```
+  </Step>
+  <Step title="Monitor the job">
+    The API returns immediately with a confirmation that the bulk job was enqueued. Templates appear in the index once the background job completes.
+  </Step>
+</Steps>
+
+<Warning>
+  Column keys in the CSV must exactly match the keys provided in the `mapping` object. Mismatched keys result in empty field values rather than errors.
+</Warning>
+
+## Template Assets
+
+Template Assets are organisation-level, portable template packages (ZIP files) that bundle a Content Type, Layout, Theme, and Data Template together. They can be shared publicly and downloaded by any organisation.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/v1/template_assets` | List all template assets in your organisation |
+| `POST /api/v1/template_assets` | Upload a new template asset (ZIP file) |
+| `GET /api/v1/template_assets/:id` | Show a single template asset |
+| `DELETE /api/v1/template_assets/:id` | Delete a template asset |
+| `GET /api/v1/template_assets/public` | List all publicly available templates |
+| `GET /api/v1/template_assets/:id/download` | Get a pre-signed URL to download a public template |
+
+<Tip>
+  Use `POST /api/v1/template_assets/:id/import` to instantiate a Template Asset into your organisation, creating the Content Type, Layout, Theme, and Data Template in one step.
+</Tip>

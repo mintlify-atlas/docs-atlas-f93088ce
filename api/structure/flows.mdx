@@ -1,0 +1,568 @@
+---
+title: "Flows and States API: Document Workflow Management"
+sidebarTitle: "Flows"
+description: "Design approval workflows by creating flows with ordered states, assigning approvers per state at document level, and advancing documents through review cycles."
+---
+
+A flow is a named approval workflow that governs how documents move through their lifecycle — from an initial draft state through review, approval, and final publication. Each flow contains an ordered list of **states**, and each content type is bound to exactly one flow. When a document instance is created, it enters the first state of its content type's flow.
+
+States can be typed as `editor` (collaborative editing), `reviewer` (pending approval), or `sign` (awaiting signature). Flows can be **controlled** (requiring explicit approver sign-off per state) or **uncontrolled** (state transitions are unrestricted).
+
+<Note>
+  Flow operations require the `flow` permission group: `flow:manage` to create/update flows and states, `flow:show` to read, `flow:delete` to remove flows and states.
+</Note>
+
+---
+
+## Create a flow
+
+`POST /api/v1/flows`
+
+Creates a new approval flow in the authenticated user's organisation. For controlled flows, pass `controlled: true` along with a `control_data` object that specifies the approval structure. The flow is indexed in Typesense after creation.
+
+**Required permission:** `flow:manage`
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  Display name for the flow. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="controlled" type="boolean" required>
+  `true` for a controlled flow requiring explicit approver sign-off at each state; `false` for an uncontrolled flow where transitions are unrestricted.
+</ParamField>
+
+<ParamField body="control_data" type="object">
+  Required when `controlled: true`. Specifies the approval system configuration, including `pre_state`, `post_state`, and `approver` (user UUID).
+</ParamField>
+
+<CodeGroup>
+```bash cURL — Uncontrolled flow
+curl -s -X POST https://api.wraft.com/api/v1/flows \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "HR Document Flow",
+    "controlled": false,
+    "control_data": {}
+  }'
+```
+
+```bash cURL — Controlled flow
+curl -s -X POST https://api.wraft.com/api/v1/flows \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Contract Approval Flow",
+    "controlled": true,
+    "control_data": {
+      "pre_state": "review",
+      "post_state": "approved",
+      "approver": "user-uuid-here"
+    }
+  }'
+```
+
+```json Response
+{
+  "id": "flow-uuid-0001",
+  "name": "HR Document Flow",
+  "controlled": false,
+  "control_data": {},
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the newly created flow.</ResponseField>
+<ResponseField name="name" type="string">Flow display name.</ResponseField>
+<ResponseField name="controlled" type="boolean">`true` if the flow requires explicit approvals.</ResponseField>
+<ResponseField name="control_data" type="object">Approval configuration (only meaningful when `controlled: true`).</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+
+---
+
+## List flows
+
+`GET /api/v1/flows`
+
+Returns a paginated list of all flows in the authenticated user's organisation, each including the creator's profile.
+
+**Required permission:** `flow:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+
+<ParamField query="name" type="string">Filter by flow name (substring match).</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`, `updated_at`, `updated_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/flows?page=1&sort=name" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "flows": [
+    {
+      "flow": {
+        "id": "flow-uuid-0001",
+        "name": "HR Document Flow",
+        "controlled": false,
+        "inserted_at": "2024-06-01T10:00:00Z",
+        "updated_at": "2024-06-01T10:00:00Z"
+      },
+      "creator": { "id": "u1", "name": "Bob Smith", "email": "bob@example.com" }
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 2
+}
+```
+</CodeGroup>
+
+---
+
+## Show a flow
+
+`GET /api/v1/flows/:id`
+
+Returns full details of a single flow, including its ordered list of states, associated approval systems, and creator profile.
+
+**Required permission:** `flow:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the flow.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/flows/flow-uuid-0001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "flow": {
+    "id": "flow-uuid-0001",
+    "name": "HR Document Flow",
+    "controlled": false,
+    "control_data": {},
+    "inserted_at": "2024-06-01T10:00:00Z",
+    "updated_at": "2024-06-01T10:00:00Z"
+  },
+  "creator": { "id": "u1", "name": "Bob Smith", "email": "bob@example.com" },
+  "states": [
+    { "id": "s1", "state": "draft",    "order": 1, "type": "editor",   "inserted_at": "2024-06-01T10:00:00Z" },
+    { "id": "s2", "state": "review",   "order": 2, "type": "reviewer", "inserted_at": "2024-06-01T10:00:00Z" },
+    { "id": "s3", "state": "approved", "order": 3, "type": "reviewer", "inserted_at": "2024-06-01T10:00:00Z" }
+  ],
+  "approval_systems": []
+}
+```
+</CodeGroup>
+
+---
+
+## Update a flow
+
+`PUT /api/v1/flows/:id`
+
+Updates the name or controlled status of an existing flow. The Typesense index is refreshed after a successful update.
+
+**Required permission:** `flow:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the flow to update.</ParamField>
+
+### Request body
+
+<ParamField body="name" type="string" required>Updated flow name.</ParamField>
+<ParamField body="controlled" type="boolean" required>Updated controlled flag.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/flows/flow-uuid-0001 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "HR Document Flow v2", "controlled": false }'
+```
+</CodeGroup>
+
+---
+
+## Delete a flow
+
+`DELETE /api/v1/flows/:id`
+
+Permanently deletes a flow. Deletion will fail if any content types reference this flow. The record is removed from the Typesense index.
+
+**Required permission:** `flow:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the flow to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/flows/flow-uuid-0001 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Reorder states in a flow
+
+`PUT /api/v1/flows/:id/align-states`
+
+Updates the `order` of all states within a flow simultaneously. Pass an array of state objects each containing `id` and the new `order` value. This is used when dragging and dropping states in the flow editor UI.
+
+**Required permission:** `flow:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the flow whose states will be reordered.</ParamField>
+
+### Request body
+
+<ParamField body="states" type="array" required>
+  Array of state reorder objects. Each object must include:
+  - `id` (string) — UUID of the state
+  - `order` (integer) — new sequential position (1-based)
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/flows/flow-uuid-0001/align-states \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "states": [
+      { "id": "s3", "order": 1 },
+      { "id": "s1", "order": 2 },
+      { "id": "s2", "order": 3 }
+    ]
+  }'
+```
+
+```json Response
+{
+  "flow": {
+    "id": "flow-uuid-0001",
+    "name": "HR Document Flow",
+    "controlled": false
+  },
+  "states": [
+    { "id": "s3", "state": "approved", "order": 1 },
+    { "id": "s1", "state": "draft",    "order": 2 },
+    { "id": "s2", "state": "review",   "order": 3 }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## States
+
+States are the individual steps within a flow. They define the name, sequential order, and type of each workflow stage. States within a flow must have unique names and unique order values.
+
+### State types
+
+| Type | Description |
+|------|-------------|
+| `editor` | Collaborative editing phase — document can be modified |
+| `reviewer` | Review/approval phase — approvers must sign off |
+| `sign` | Signature collection phase |
+
+---
+
+## Create a state
+
+`POST /api/v1/flows/:flow_id/states`
+
+Creates a new state inside a flow. The `order` value positions the state in the workflow sequence and must be unique within the flow. Approvers can be assigned at creation time.
+
+**Required permission:** `flow:manage`
+
+### Path parameters
+
+<ParamField path="flow_id" type="string" required>UUID of the flow to add this state to.</ParamField>
+
+### Request body
+
+<ParamField body="state" type="string" required>
+  Display name of the state (e.g. `"Draft"`, `"Review"`, `"Approved"`). Must be unique within the flow.
+</ParamField>
+
+<ParamField body="order" type="integer" required>
+  Position of this state in the workflow sequence (1-based). Must be unique within the flow.
+</ParamField>
+
+<ParamField body="type" type="string">
+  State type: `editor`, `reviewer`, or `sign`. Defaults to `editor`.
+</ParamField>
+
+<ParamField body="approvers" type="array" required>
+  Array of user UUIDs who are designated approvers for this state. Pass an empty array `[]` for states that do not require approval.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/flows/flow-uuid-0001/states \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "state": "Review",
+    "order": 2,
+    "type": "reviewer",
+    "approvers": [
+      "b840c04c-25a2-4426-895a-acd2685153e4",
+      "b190bece-160c-44cc-91e9-79367ed2ccf6"
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "s2-uuid",
+  "state": "Review",
+  "order": 2,
+  "type": "reviewer",
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the new state.</ResponseField>
+<ResponseField name="state" type="string">State name.</ResponseField>
+<ResponseField name="order" type="integer">Position in the flow sequence.</ResponseField>
+<ResponseField name="type" type="string">State type: `editor`, `reviewer`, or `sign`.</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+
+---
+
+## List states in a flow
+
+`GET /api/v1/flows/:flow_id/states`
+
+Returns all states belonging to a flow, ordered by their `order` field (ascending). Each state entry includes the creator and the parent flow reference.
+
+**Required permission:** `flow:show`
+
+### Path parameters
+
+<ParamField path="flow_id" type="string" required>UUID of the flow.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/flows/flow-uuid-0001/states" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "states": [
+    {
+      "state": { "id": "s1", "state": "Draft",    "order": 1, "type": "editor" },
+      "creator": { "id": "u1", "name": "Bob Smith" },
+      "flow": { "id": "flow-uuid-0001", "name": "HR Document Flow" }
+    },
+    {
+      "state": { "id": "s2", "state": "Review",   "order": 2, "type": "reviewer" },
+      "creator": { "id": "u1", "name": "Bob Smith" },
+      "flow": { "id": "flow-uuid-0001", "name": "HR Document Flow" }
+    },
+    {
+      "state": { "id": "s3", "state": "Approved", "order": 3, "type": "reviewer" },
+      "creator": { "id": "u1", "name": "Bob Smith" },
+      "flow": { "id": "flow-uuid-0001", "name": "HR Document Flow" }
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## Update a state
+
+`PUT /api/v1/states/:id`
+
+Updates the name, order, type, or approver list of an existing state. To modify approvers, pass an `approvers` object with `add` and `remove` arrays of user UUIDs.
+
+**Required permission:** `flow:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the state to update.</ParamField>
+
+### Request body
+
+<ParamField body="state" type="string">Updated state name.</ParamField>
+<ParamField body="order" type="integer">Updated sequential position.</ParamField>
+<ParamField body="type" type="string">Updated state type: `editor`, `reviewer`, or `sign`.</ParamField>
+<ParamField body="approvers" type="object">
+  Differential approver update object:
+  - `add` — array of user UUIDs to add as approvers
+  - `remove` — array of user UUIDs to remove from approvers
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/states/s2-uuid \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "state": "Legal Review",
+    "order": 2,
+    "type": "reviewer",
+    "approvers": {
+      "add": ["new-approver-uuid"],
+      "remove": ["b840c04c-25a2-4426-895a-acd2685153e4"]
+    }
+  }'
+```
+</CodeGroup>
+
+---
+
+## Delete a state
+
+`DELETE /api/v1/states/:id`
+
+Permanently deletes a state. After deletion, remaining states in the flow are automatically reordered (order values are shuffled) to close any gaps.
+
+**Required permission:** `flow:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the state to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/states/s2-uuid \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Assign a user to a state (document level)
+
+`POST /api/v1/states/:state_id/users/:user_id`
+
+Assigns a user as an approver for a specific state **at the document level** — i.e. for a specific document instance rather than globally for the flow. Requires a `document_id` query parameter identifying the instance.
+
+**Required permission:** `flow:manage`
+
+### Path parameters
+
+<ParamField path="state_id" type="string" required>UUID of the state.</ParamField>
+<ParamField path="user_id" type="string" required>UUID of the user to assign.</ParamField>
+
+### Query parameters
+
+<ParamField query="document_id" type="string" required>
+  UUID of the document instance (`content_id`) for which this assignment applies.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST \
+  "https://api.wraft.com/api/v1/states/s2-uuid/users/user-uuid-here?document_id=c1f2a3b4-0000-0000-0000-000000000001" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+<Note>
+  A user can only be assigned to a state once per document. The endpoint returns an error if the user is already an approver for that state on the given document.
+</Note>
+
+---
+
+## Remove a user from a state (document level)
+
+`DELETE /api/v1/states/:state_id/users/:user_id`
+
+Removes a document-level approver assignment for a specific state and document instance.
+
+**Required permission:** `flow:delete`
+
+### Path parameters
+
+<ParamField path="state_id" type="string" required>UUID of the state.</ParamField>
+<ParamField path="user_id" type="string" required>UUID of the user to remove.</ParamField>
+
+### Query parameters
+
+<ParamField query="document_id" type="string" required>UUID of the document instance (`content_id`) from which this assignment should be removed.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE \
+  "https://api.wraft.com/api/v1/states/s2-uuid/users/user-uuid-here?document_id=c1f2a3b4-0000-0000-0000-000000000001" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## List users assigned to a state (document level)
+
+`GET /api/v1/states/:state_id/users`
+
+Returns the list of users currently assigned as approvers for a state at the document level.
+
+**Required permission:** `flow:show`
+
+### Path parameters
+
+<ParamField path="state_id" type="string" required>UUID of the state.</ParamField>
+
+### Query parameters
+
+<ParamField query="document_id" type="string" required>UUID of the document instance to query approvers for.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s \
+  "https://api.wraft.com/api/v1/states/s2-uuid/users?document_id=c1f2a3b4-0000-0000-0000-000000000001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "users": [
+    {
+      "id": "b190bece-160c-44cc-91e9-79367ed2ccf6",
+      "name": "Alice Manager",
+      "email": "alice@example.com",
+      "email_verify": true,
+      "inserted_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+<Tip>
+  Document-level approver assignments override the flow-level defaults for a specific document. This is useful when a particular contract requires a different set of reviewers than the standard flow configuration.
+</Tip>

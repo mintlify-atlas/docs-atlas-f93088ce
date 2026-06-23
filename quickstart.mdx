@@ -1,47 +1,266 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Quickstart: Make Your First Wraft API Call"
+sidebarTitle: "Quickstart"
+description: "Sign up, authenticate, and create your first layout, content type, and document instance through the Wraft REST API in under ten minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+Wraft exposes a versioned REST API at `/api/v1` that lets you programmatically manage every part of the document lifecycle — from user registration and authentication through template creation, document authoring, and PDF builds. This guide walks you through the minimal set of steps to go from zero to your first document instance using `curl`. All examples target a locally running Wraft instance; substitute `https://app.wraft.app` if you are using Wraft Cloud.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+<Note>
+  **Prerequisites:** You need a running Wraft instance (see the [Self-Hosting guide](/self-hosting)) or an active [Wraft Cloud](https://wraft.app) account before proceeding. The interactive OpenAPI reference is available at `http://localhost:4000/spec/swaggerui` and is a useful companion while exploring the API.
+</Note>
 
-## Prerequisites
+## Base URL
 
-Before you begin, you must have:
+```text
+http://localhost:4000/api/v1
+```
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+---
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+  <Step title="Create an account">
+    Register a new user by sending a `POST` request to `/api/v1/users/signup/`. On success the endpoint returns the new user object. Email verification may be required depending on your instance configuration.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s -X POST http://localhost:4000/api/v1/users/signup/ \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "Ada Lovelace",
+          "email": "ada@example.com",
+          "password": "SecureP@ssw0rd!"
+        }'
+      ```
+
+      ```json Response
+      {
+        "id": "usr_01hxyz...",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "email_verify": false
+      }
+      ```
+    </CodeGroup>
+
+    <Tip>
+      If your instance ships with the default seed data, you can skip this step and sign in directly with `wraftuser@gmail.com` / `demo@1234`. See the warning in the [Self-Hosting guide](/self-hosting) about rotating these credentials before exposing an instance publicly.
+    </Tip>
+  </Step>
+
+  <Step title="Sign in and obtain a JWT token">
+    Exchange your credentials for an access token and a refresh token. All subsequent authenticated requests require the `Authorization: Bearer <access_token>` header.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s -X POST http://localhost:4000/api/v1/users/signin \
+        -H "Content-Type: application/json" \
+        -d '{
+          "email": "ada@example.com",
+          "password": "SecureP@ssw0rd!"
+        }'
+      ```
+
+      ```json Response
+      {
+        "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+        "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+        "user": {
+          "id": "usr_01hxyz...",
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        }
+      }
+      ```
+    </CodeGroup>
+
+    Save the `token` value — you will pass it as a Bearer token in every subsequent request.
 
     ```bash
-    npm install your-package
+    export WRAFT_TOKEN="eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Verify authentication with GET /users/me">
+    Confirm that your token is valid and inspect the current user object returned by the `/api/v1/users/me` endpoint.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s http://localhost:4000/api/v1/users/me \
+        -H "Authorization: Bearer $WRAFT_TOKEN"
+      ```
+
+      ```json Response
+      {
+        "id": "usr_01hxyz...",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "email_verify": true,
+        "current_org_id": "org_01habc...",
+        "profile": {
+          "name": "Ada Lovelace"
+        }
+      }
+      ```
+    </CodeGroup>
+
+    <Note>
+      The `current_org_id` field identifies which organisation context your token is scoped to. Most resources (layouts, content types, documents) are created within this organisation.
+    </Note>
+  </Step>
+
+  <Step title="Create a layout">
+    A layout is a Typst or LaTeX template that controls the visual appearance of rendered PDFs. Create a minimal layout by posting to `/api/v1/layouts`. The `engine_uuid` identifies which rendering engine to use — list available engines first with `GET /api/v1/engines`.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s -X POST http://localhost:4000/api/v1/layouts \
+        -H "Authorization: Bearer $WRAFT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "Basic Letter",
+          "description": "A simple single-column letter layout",
+          "width": 210,
+          "height": 297,
+          "unit": "mm",
+          "slug": "basic-letter"
+        }'
+      ```
+
+      ```json Response
+      {
+        "id": "lay_01h...",
+        "name": "Basic Letter",
+        "description": "A simple single-column letter layout",
+        "width": 210,
+        "height": 297,
+        "unit": "mm",
+        "slug": "basic-letter",
+        "inserted_at": "2025-01-15T10:00:00Z"
+      }
+      ```
+    </CodeGroup>
+
+    Note the returned `id` — you will need it when creating a content type.
 
     ```bash
-    your-cli init
+    export LAYOUT_ID="lay_01h..."
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Create a content type">
+    A content type binds a layout, a theme, and an approval flow together into a reusable document schema. The `layout_uuid`, `flow_id`, and `theme_id` fields reference resources you create in your organisation. For a minimal setup you can create a basic flow (`POST /api/v1/flows`) and theme (`POST /api/v1/themes`) first, then reference their IDs here.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s -X POST http://localhost:4000/api/v1/content_types \
+        -H "Authorization: Bearer $WRAFT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "Business Letter",
+          "description": "Standard outbound business correspondence",
+          "prefix": "BL",
+          "color": "#4F46E5",
+          "layout_uuid": "'$LAYOUT_ID'",
+          "flow_id": "'$FLOW_ID'",
+          "theme_id": "'$THEME_ID'"
+        }'
+      ```
+
+      ```json Response
+      {
+        "id": "ctype_01h...",
+        "name": "Business Letter",
+        "description": "Standard outbound business correspondence",
+        "prefix": "BL",
+        "color": "#4F46E5",
+        "layout": { "id": "lay_01h...", "name": "Basic Letter" },
+        "flow": { "id": "flw_01h...", "name": "Simple Approval" },
+        "inserted_at": "2025-01-15T10:05:00Z"
+      }
+      ```
+    </CodeGroup>
+
+    Save the content type `id`:
 
     ```bash
-    your-cli start
+    export C_TYPE_ID="ctype_01h..."
     ```
   </Step>
+
+  <Step title="Create a document instance">
+    With a content type in place, create a concrete document (called an *instance* in Wraft) by posting to `/api/v1/content_types/:c_type_id/contents`. The `serialized` field carries the document body as structured JSON; the shape depends on the fields defined on your content type.
+
+    <CodeGroup>
+      ```bash curl
+      curl -s -X POST \
+        "http://localhost:4000/api/v1/content_types/$C_TYPE_ID/contents" \
+        -H "Authorization: Bearer $WRAFT_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "instance_id": "BL-0001",
+          "raw": "Dear Sir/Madam,\n\nPlease find attached our proposal...",
+          "serialized": {
+            "title": "Partnership Proposal",
+            "body": "Dear Sir/Madam,\n\nPlease find attached our proposal..."
+          }
+        }'
+      ```
+
+      ```json Response
+      {
+        "id": "inst_01h...",
+        "instance_id": "BL-0001",
+        "state": {
+          "id": "state_01h...",
+          "state": "Draft"
+        },
+        "content_type": {
+          "id": "ctype_01h...",
+          "name": "Business Letter"
+        },
+        "inserted_at": "2025-01-15T10:10:00Z"
+      }
+      ```
+    </CodeGroup>
+
+    Your document instance now exists in the **Draft** state. From here you can:
+
+    - **Build a PDF** — `POST /api/v1/contents/:id/build`
+    - **Move through the workflow** — `PATCH /api/v1/contents/:id/states`
+    - **Request approval** — `PUT /api/v1/contents/:id/approve`
+    - **Add a signature** — `POST /api/v1/contents/:id/request_signature`
+  </Step>
+
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+---
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+## Authentication Reference
+
+All authenticated endpoints expect a JWT in the `Authorization` header:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Tokens are short-lived. Use the refresh token endpoint to obtain a new pair without re-entering credentials:
+
+```bash
+curl -s -X POST http://localhost:4000/api/v1/users/token_refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "token": "<refresh_token>" }'
+```
+
+## Explore the Full API
+
+The complete interactive API reference — including request/response schemas for every endpoint — is served directly by your Wraft instance:
+
+```text
+http://localhost:4000/spec/swaggerui
+```
+
+<Tip>
+  Use the **Authorize** button in the Swagger UI to paste your Bearer token once and have it applied automatically to every test request in the browser.
 </Tip>

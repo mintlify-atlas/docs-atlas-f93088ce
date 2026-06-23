@@ -1,0 +1,209 @@
+---
+title: "Forms: Structured Data Collection for Document Generation"
+sidebarTitle: "Forms"
+description: "Build typed, validated Wraft Forms to collect structured data, map fields to Content Types, and trigger document generation automatically via Pipelines."
+---
+
+Wraft Forms are configurable data collection instruments that feed directly into document generation. Each Form has a name, description, prefix, and a status of `active` or `inactive`. Forms contain typed fields — each with validation rules, a machine name, and an ordering. When a user submits a form entry, any connected Pipelines fire automatically, producing documents from the submitted data.
+
+## What Is a Wraft Form?
+
+A Form groups a set of **Form Fields** (typed data inputs) and connects them to one or more Pipelines. Each Form Field references a typed `Field` (which belongs to a `FieldType` that defines allowed validations), carries a `machine_name` for deterministic mapping, an integer `order` for display sequencing, and an embedded `validations` list.
+
+<Note>
+  A Form cannot be deleted while it has associated Pipelines. Detach all Pipeline connections first, then delete the form.
+</Note>
+
+## Form Fields
+
+Each field in a form is backed by a `FormField` record that links a `Form` to a `Field`. The `machine_name` is auto-generated from the field's name (lowercased, spaces replaced with underscores), but can also be set manually.
+
+| Property | Description |
+|---|---|
+| `name` | Human-readable label for the field |
+| `machine_name` | Slug identifier used for data mapping (auto-generated or manual) |
+| `order` | Integer position of the field in the form (1-based) |
+| `validations` | Array of validation rules (e.g., `required`, `min_length`) |
+| `field_type_id` | The UUID of the FieldType that governs allowed validations |
+
+<Warning>
+  Machine names must contain only lowercase letters, numbers, and underscores. Duplicate machine names within the same form are automatically suffixed with `_1`, `_2`, etc.
+</Warning>
+
+## Creating a Form
+
+`POST /api/v1/forms`
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/forms \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "New Hire Onboarding",
+    "description": "Collects new employee details for contract generation",
+    "prefix": "NHO",
+    "status": "active",
+    "fields": [
+      {
+        "name": "Full Name",
+        "field_type_id": "ft-uuid-text",
+        "validations": [
+          { "validation": { "rule": "required", "value": true } }
+        ]
+      },
+      {
+        "name": "Start Date",
+        "field_type_id": "ft-uuid-date",
+        "validations": [
+          { "validation": { "rule": "required", "value": true } }
+        ]
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "form-uuid",
+  "name": "New Hire Onboarding",
+  "description": "Collects new employee details for contract generation",
+  "prefix": "NHO",
+  "status": "active",
+  "form_fields": [
+    {
+      "id": "ff-uuid-1",
+      "machine_name": "full_name",
+      "order": 1,
+      "validations": [{ "validation": { "rule": "required", "value": true } }],
+      "field": { "name": "Full Name", "field_type": { "name": "Short Text" } }
+    },
+    {
+      "id": "ff-uuid-2",
+      "machine_name": "start_date",
+      "order": 2,
+      "validations": [{ "validation": { "rule": "required", "value": true } }],
+      "field": { "name": "Start Date", "field_type": { "name": "Date" } }
+    }
+  ],
+  "pipelines": []
+}
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string" required>
+  The display name of the form.
+</ParamField>
+
+<ParamField body="prefix" type="string" required>
+  A unique short code for this form (e.g., `"NHO"`). Must be unique across your organisation.
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Either `"active"` or `"inactive"`. Only active forms accept new entries.
+</ParamField>
+
+<ParamField body="fields" type="array" required>
+  An ordered array of field definitions. Each object requires `name`, `field_type_id`, and `validations`.
+</ParamField>
+
+## Listing and Managing Forms
+
+<CardGroup cols={2}>
+  <Card title="List Forms" icon="list">
+    `GET /api/v1/forms`
+
+    Paginated list of forms in your organisation. Filter by `name`, sort by `name`, `name_desc`, `inserted_at`, or `inserted_at_desc`.
+  </Card>
+  <Card title="Show Form" icon="eye">
+    `GET /api/v1/forms/:id`
+
+    Returns the form with all form fields (including field types) and connected pipelines.
+  </Card>
+  <Card title="Update Form" icon="pencil">
+    `PUT /api/v1/forms/:id`
+
+    Updates the form and its fields. Pass `{"field_id": "uuid"}` (with no other keys) in the `fields` array to remove a field.
+  </Card>
+  <Card title="Delete Form" icon="trash">
+    `DELETE /api/v1/forms/:id`
+
+    Deletes the form, all form fields, and all form mappings. Fails if the form has active pipeline connections.
+  </Card>
+</CardGroup>
+
+## Updating Form Status
+
+Toggle a form between `active` and `inactive` without touching its fields.
+
+```bash cURL
+curl -X PATCH https://api.wraft.com/api/v1/forms/:id/status \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "inactive" }'
+```
+
+## Reordering Fields
+
+Change the display order of form fields by providing a map of `field_id` → `order` integer pairs.
+
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/forms/:id/align-fields \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fields": {
+      "ff-uuid-1": 2,
+      "ff-uuid-2": 1
+    }
+  }'
+```
+
+## Submitting Form Entries
+
+`POST /api/v1/forms/:form_id/entries`
+
+Form entries are validated server-side against each field's rules. The `data` array must contain exactly one object per form field, identified by `field_id`.
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/forms/:form_id/entries \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": [
+      { "field_id": "ff-uuid-1", "value": "Jane Smith" },
+      { "field_id": "ff-uuid-2", "value": "2025-09-01" }
+    ]
+  }'
+```
+
+<Note>
+  Submitting an entry to an active form automatically triggers all Pipelines connected to that form. Each pipeline creates a Trigger History record and enqueues a background document generation job.
+</Note>
+
+## Form Mappings
+
+A Form Mapping links a Pipe Stage to a Form and defines how form field values map onto Content Type fields. This allows Wraft to translate the submitted data into the correct document fields during pipeline execution.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/v1/forms/mapping` | `POST` | Create a new form-to-pipeline-stage mapping |
+| `/api/v1/forms/mapping/:mapping_id` | `GET` | Retrieve a specific form mapping |
+| `/api/v1/forms/mapping/:mapping_id` | `PUT` | Update the field mapping rules |
+
+The mapping object pairs `source` (form field) with `destination` (content type field) using their `machine_name` or `name` values for resolution.
+
+## Connecting Forms to Pipelines
+
+When creating or updating a form, pass a `pipeline_ids` array to connect the form to one or more existing Pipelines:
+
+```json
+{
+  "name": "Updated Onboarding Form",
+  "pipeline_ids": ["pipeline-uuid-1", "pipeline-uuid-2"]
+}
+```
+
+Pipelines no longer in the list are automatically disconnected. See [Pipelines](/features/pipelines) for details on creating pipelines and stages.

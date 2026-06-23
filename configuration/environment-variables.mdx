@@ -1,0 +1,194 @@
+---
+title: "Environment Variables Reference for Wraft Configuration"
+sidebarTitle: "Environment Variables"
+description: "Complete reference for all Wraft environment variables, organized by category with required/optional status and generation instructions for secret keys."
+---
+
+Wraft is configured entirely through environment variables. Copy `.env.example` to `.env.dev`, fill in the values, then run `source .env.dev` before starting the server. In Docker Compose deployments the same variables are consumed directly from the environment. Secret keys must be freshly generated for every installation — never reuse the placeholder values from `.env.example`.
+
+## Application
+
+These variables control the core runtime behaviour of the Phoenix application.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `FRONTEND_URL` | ✅ Yes | `http://localhost:3000` | Full URL of the Wraft frontend application |
+| `BACKEND_URL` | ✅ Yes | `http://localhost:4000` | Full URL of the Phoenix backend API |
+| `SECRET_KEY_BASE` | ✅ Yes | — | 64-byte random key used to sign/encrypt cookies and sessions |
+| `GUARDIAN_KEY` | ✅ Yes | — | Secret key used by Guardian to sign JWT authentication tokens |
+| `CLOAK_KEY` | ✅ Yes | — | Base-64 encoded 32-byte key used to encrypt sensitive database fields |
+| `MIX_ENV` | ✅ Yes | `dev` | Mix environment — `dev`, `test`, or `prod` |
+| `SELF_HOSTED` | ✅ Yes | `true` | Set to `true` to enable self-hosted mode and disable cloud billing checks |
+| `PHX_SERVER` | ✅ Yes | `true` | When set, Phoenix starts the HTTP server on boot |
+| `RELEASE_NAME` | ✅ Yes | `wraft_doc` | OTP release name used to identify the running node |
+| `WRAFT_HOSTNAME` | ✅ Yes | `example.com` | Domain used as the sender domain in outbound email headers |
+
+<Note>
+Generate each secret key with the appropriate command — never share or commit these values to version control.
+</Note>
+
+<CodeGroup>
+```shell Generate SECRET_KEY_BASE
+mix phx.gen.secret
+```
+
+```shell Generate GUARDIAN_KEY
+mix guardian.gen.secret
+```
+
+```shell Generate CLOAK_KEY
+openssl rand -base64 32
+```
+</CodeGroup>
+
+---
+
+## Database
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✅ Yes (prod/dev) | Full Postgres connection URL. Format: `postgres://username:password@host:port/database` |
+| `DEV_DB_USERNAME` | ⚠️ Docker only | Postgres username for the Docker Compose `db` service |
+| `DEV_DB_PASSWORD` | ⚠️ Docker only | Postgres password for the Docker Compose `db` service |
+| `DEV_DB_NAME` | ⚠️ Docker only | Database name for the Docker Compose `db` service |
+
+<Note>
+`DEV_DB_*` variables are only read when running `docker compose up`. The `DATABASE_URL` is constructed automatically inside the Docker Compose backend service using these three values. For bare-metal development, set `DATABASE_URL` directly.
+</Note>
+
+```shell Example DATABASE_URL
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/wraft-dev-db
+```
+
+---
+
+## Storage (MinIO)
+
+Wraft uses MinIO — an S3-compatible object storage server — to store all generated PDFs, theme assets, layout files, and template assets.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MINIO_URL` | ✅ Yes | `127.0.0.1:9000` | Full URL (host + port) used by the Waffle file uploader as the asset host |
+| `MINIO_HOST` | ✅ Yes | `127.0.0.1` | Hostname used by `ex_aws` to connect to MinIO |
+| `MINIO_PORT` | ✅ Yes | `9000` | Port used by `ex_aws` to connect to MinIO |
+| `MINIO_BUCKET` | ✅ Yes | `wraft` | Name of the primary storage bucket |
+| `MINIO_ROOT_USER` | ✅ Yes | `minioadmin` | MinIO root access key (equivalent to AWS `access_key_id`) |
+| `MINIO_ROOT_PASSWORD` | ✅ Yes | `minioadmin` | MinIO root secret key (equivalent to AWS `secret_access_key`) |
+
+```shell .env.dev – MinIO example
+export MINIO_URL=127.0.0.1:9000
+export MINIO_HOST=127.0.0.1
+export MINIO_PORT=9000
+export MINIO_BUCKET=wraft
+export MINIO_ROOT_USER=minioadmin
+export MINIO_ROOT_PASSWORD=minioadmin
+```
+
+---
+
+## Search (Typesense)
+
+Wraft uses Typesense for fast, typo-tolerant full-text search across documents and content types.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TYPESENSE_API_KEY` | ✅ Yes | — | API key configured when starting the Typesense server |
+| `TYPESENSE_HOST` | ✅ Yes | `localhost` | Hostname of the Typesense server |
+| `TYPESENSE_PORT` | ✅ Yes | `8108` | Port the Typesense server listens on |
+| `TYPESENSE_SCHEME` | ✅ Yes | `http` | Connection scheme — `http` or `https` |
+
+```shell .env.dev – Typesense example
+export TYPESENSE_API_KEY=xyz
+export TYPESENSE_HOST=localhost
+export TYPESENSE_PORT=8108
+export TYPESENSE_SCHEME=http
+```
+
+---
+
+## Email
+
+Wraft sends transactional emails via Resend (default) or an SMTP relay. See the [Email configuration guide](/configuration/email) for full details.
+
+| Variable | Required | Description |
+|---|---|---|
+| `RESEND_API_KEY` | ✅ Yes (if using Resend) | API key from [resend.com](https://resend.com). When set, Resend is used as the mail adapter. |
+| `EMAIL_ADAPTER` | Optional | Set to `smtp` to use an SMTP relay instead of Resend |
+| `SMTP_HOST` | ✅ Yes (if SMTP) | Hostname of the SMTP relay (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | Optional | SMTP port. Defaults to `587` when not set |
+| `SMTP_USERNAME` | ✅ Yes (if SMTP) | SMTP authentication username |
+| `SMTP_PASSWORD` | ✅ Yes (if SMTP) | SMTP authentication password |
+| `SMTP_SSL` | Optional | Set to `true` to enable SSL on the SMTP connection. Defaults to `false` |
+
+---
+
+## Document Rendering
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `XELATEX_PATH` | ✅ Yes | `xelatex` | Absolute path to the `xelatex` binary, or just `xelatex` if it is on `$PATH`. Used to render LaTeX-based document templates. |
+
+---
+
+## Digital Signing
+
+These variables configure the local keystore used to apply digital signatures to generated PDF documents. All three are optional — when omitted, Wraft falls back to the default keystore at `priv/signature/doc_signer.p12`.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SIGNING_LOCAL_FILE_PATH` | Optional | Relative path (under `priv/keystore/`) to the `.p12` certificate file used for PDF signing |
+| `SIGNING_LOCAL_PASSPHRASE` | Optional | Passphrase for the `.p12` certificate file |
+| `SIGNING_KEY_ALIAS` | Optional | Key alias within the `.p12` file to use for signing. Defaults to `"1"` |
+
+---
+
+## Admin Credentials
+
+| Variable | Required | Description |
+|---|---|---|
+| `WRAFT_ADMIN_EMAIL` | Optional | Email address for the default admin user created during `mix setup` |
+| `WRAFT_ADMIN_PASSWORD` | Optional | Password for the default admin user |
+
+<Warning>
+Change the default admin credentials immediately after the first login, especially in production environments.
+</Warning>
+
+---
+
+## Monitoring
+
+| Variable | Required | Description |
+|---|---|---|
+| `SENTRY_DSN` | Optional | Sentry Data Source Name (DSN). When set, Wraft reports exceptions to Sentry in the `prod` environment. |
+
+---
+
+## Billing (Paddle)
+
+Wraft integrates with [Paddle](https://paddle.com) for subscription billing on cloud-hosted plans. These variables are not required for self-hosted deployments.
+
+| Variable | Required | Description |
+|---|---|---|
+| `PADDLE_API_KEY` | Optional | Paddle API key for making server-side billing API calls |
+| `PADDLE_WEBHOOK_SECRET_KEY` | Optional | Secret used to verify the signature of inbound Paddle webhook events |
+| `PADDLE_BASE_URL` | Optional | Paddle API base URL. Use `https://api.paddle.com` for production or `https://sandbox-api.paddle.com` for testing |
+
+---
+
+## System Backups
+
+When enabled, Wraft can automatically back up the PostgreSQL database and MinIO bucket to a dedicated backup bucket. This feature is disabled by default.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SYSTEM_BACKUP_ENABLED` | Optional | `false` | Set to `true` to enable scheduled system backups |
+| `MINIO_BACKUP_BUCKET` | Optional | `wraft-backups` | Name of the MinIO bucket where backup artifacts are stored |
+| `BACKUP_RETENTION_COUNT` | Optional | `7` | Number of backup snapshots to retain before deleting old ones |
+| `BACKUP_CLOAK_KEY_LABEL` | Optional | `v1` | Label identifying which Cloak key version to use for backup encryption metadata |
+| `BACKUP_MIN_FREE_DISK_BYTES` | Optional | `2000000000` | Minimum free disk space (in bytes) required before a backup is attempted |
+| `BACKUP_REMOTE_RESTORE_ENABLED` | Optional | `false` | Enable remote restore functionality. Off by default to prevent SSRF exposure |
+| `BACKUP_REMOTE_ALLOWED_HOSTS` | Optional | — | Comma-separated list of hostnames permitted for remote restore operations |
+
+<Warning>
+Backup artifacts are stored unencrypted (plain `tar` + `pg_dump`). Keep the backup bucket private and restrict access to authorised staff only.
+</Warning>

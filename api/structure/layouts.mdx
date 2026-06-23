@@ -1,0 +1,378 @@
+---
+title: "Layouts API: Page Templates and Rendering Engines"
+sidebarTitle: "Layouts"
+description: "Manage page layouts that define paper dimensions, margins, rendering engines, and template assets used to produce PDFs from Wraft document instances."
+---
+
+A layout defines the physical page structure used when rendering a document to PDF. It ties together the page dimensions (width, height, unit), a slug identifying the template format, an uploaded template asset (e.g. a Typst `.typ` or LaTeX `.tex` file), and a rendering engine. Every content type must reference a layout, which determines how the merged data is transformed into the final document.
+
+Layouts support an optional `margin` configuration embedded directly on the record, controlling the printable area. A screenshot preview image can also be attached to give authors a visual preview in the UI.
+
+<Note>
+  Layout operations require the `layout` permission group: `layout:create` to create, `layout:show` to read, `layout:manage` to update, `layout:delete` to remove assets or delete the layout.
+</Note>
+
+---
+
+## Create a layout
+
+`POST /api/v1/layouts`
+
+Creates a new layout by uploading a template asset file and specifying dimensions and engine. The request must be `multipart/form-data` because file uploads are required. The engine is resolved automatically from the uploaded `type` field.
+
+**Required permission:** `layout:create`
+
+### Request body (`multipart/form-data`)
+
+<ParamField body="name" type="string" required>
+  Display name for the layout. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Human-readable description of what this layout is designed for.
+</ParamField>
+
+<ParamField body="engine_id" type="string" required>
+  UUID of the rendering engine to use (Typst or LaTeX). Use `GET /api/v1/engines` to list available engines.
+</ParamField>
+
+<ParamField body="file" type="file" required>
+  The template asset file (e.g. a `.typ` Typst template or `.tex` LaTeX file). This becomes the layout's primary asset.
+</ParamField>
+
+<ParamField body="asset_name" type="string" required>
+  Name to assign to the uploaded asset record.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Asset MIME type or format identifier used to determine the rendering engine (e.g. `typst`, `latex`).
+</ParamField>
+
+<ParamField body="screenshot" type="file" required>
+  Preview image file (`.png`, `.jpg`) shown in the layout picker UI.
+</ParamField>
+
+<ParamField body="width" type="string" required>
+  Page width as a numeric string (e.g. `"210"` for A4).
+</ParamField>
+
+<ParamField body="height" type="string" required>
+  Page height as a numeric string (e.g. `"297"` for A4).
+</ParamField>
+
+<ParamField body="unit" type="string" required>
+  Dimension unit: `mm`, `cm`, `in`, or `pt`.
+</ParamField>
+
+<ParamField body="slug" type="string">
+  Identifier slug for the template format (e.g. `"a4-portrait"`). Optional but recommended.
+</ParamField>
+
+<ParamField body="frame_id" type="string">
+  UUID of a frame to associate with this layout. Frames define the variable placeholder structure.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/layouts \
+  -H "Authorization: Bearer <token>" \
+  -F "name=Standard A4 Letter" \
+  -F "description=Portrait A4 layout for formal correspondence" \
+  -F "engine_id=engine-typst-uuid" \
+  -F "asset_name=standard-letter-template" \
+  -F "type=typst" \
+  -F "width=210" \
+  -F "height=297" \
+  -F "unit=mm" \
+  -F "slug=a4-portrait" \
+  -F "file=@letter_template.typ" \
+  -F "screenshot=@letter_preview.png"
+```
+
+```json Response
+{
+  "id": "layout-uuid-0001",
+  "name": "Standard A4 Letter",
+  "description": "Portrait A4 layout for formal correspondence",
+  "width": 210.0,
+  "height": 297.0,
+  "unit": "mm",
+  "slug": "a4-portrait",
+  "screenshot": "/uploads/layouts/letter_preview.png",
+  "engine": {
+    "id": "engine-typst-uuid",
+    "name": "Typst",
+    "api_route": ""
+  },
+  "assets": [
+    {
+      "id": "asset-uuid-001",
+      "name": "standard-letter-template",
+      "file": "/uploads/assets/letter_template.typ"
+    }
+  ],
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the newly created layout.</ResponseField>
+<ResponseField name="name" type="string">Layout display name.</ResponseField>
+<ResponseField name="description" type="string">Layout description.</ResponseField>
+<ResponseField name="width" type="number">Page width (float).</ResponseField>
+<ResponseField name="height" type="number">Page height (float).</ResponseField>
+<ResponseField name="unit" type="string">Dimension unit (`mm`, `cm`, `in`, `pt`).</ResponseField>
+<ResponseField name="slug" type="string">Template format slug.</ResponseField>
+<ResponseField name="screenshot" type="string">URL of the uploaded preview image.</ResponseField>
+<ResponseField name="engine" type="object">
+  <Expandable title="engine fields">
+    <ResponseField name="id" type="string">Engine UUID.</ResponseField>
+    <ResponseField name="name" type="string">Engine name (e.g. `Typst`, `LaTeX`).</ResponseField>
+    <ResponseField name="api_route" type="string">Internal API route for the rendering service.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="assets" type="array">List of asset records attached to this layout. Each asset has `id`, `name`, and `file` (URL).</ResponseField>
+<ResponseField name="frame_id" type="string">UUID of the associated frame (if set).</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+
+---
+
+## List layouts
+
+`GET /api/v1/layouts`
+
+Returns a paginated list of all layouts in the authenticated user's organisation, including their associated engines and assets.
+
+**Required permission:** `layout:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+
+<ParamField query="name" type="string">
+  Filter by layout name (substring match).
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/layouts?page=1&sort=name" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "layouts": [
+    {
+      "id": "layout-uuid-0001",
+      "name": "Standard A4 Letter",
+      "description": "Portrait A4 layout for formal correspondence",
+      "width": 210.0,
+      "height": 297.0,
+      "unit": "mm",
+      "slug": "a4-portrait",
+      "screenshot": "/uploads/layouts/letter_preview.png",
+      "engine": { "id": "engine-typst-uuid", "name": "Typst" },
+      "assets": []
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 4
+}
+```
+</CodeGroup>
+
+---
+
+## Show a layout
+
+`GET /api/v1/layouts/:id`
+
+Returns full details of a single layout, including the engine, all attached assets, and the creator's profile.
+
+**Required permission:** `layout:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the layout.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/layouts/layout-uuid-0001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "layout": {
+    "id": "layout-uuid-0001",
+    "name": "Standard A4 Letter",
+    "description": "Portrait A4 layout for formal correspondence",
+    "width": 210.0,
+    "height": 297.0,
+    "unit": "mm",
+    "slug": "a4-portrait",
+    "screenshot": "/uploads/layouts/letter_preview.png",
+    "engine": {
+      "id": "engine-typst-uuid",
+      "name": "Typst",
+      "api_route": ""
+    },
+    "assets": [
+      {
+        "id": "asset-uuid-001",
+        "name": "standard-letter-template",
+        "file": "/uploads/assets/letter_template.typ"
+      }
+    ],
+    "inserted_at": "2024-06-01T10:00:00Z",
+    "updated_at": "2024-06-01T10:00:00Z"
+  },
+  "creator": {
+    "id": "u1",
+    "name": "Bob Smith",
+    "email": "bob@example.com"
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## Update a layout
+
+`PUT /api/v1/layouts/:id`
+
+Updates an existing layout. Like the create endpoint, accepts `multipart/form-data` to support file replacement. An `asset_id` must be supplied to replace the existing template asset. The Typesense index is refreshed after update.
+
+**Required permission:** `layout:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the layout to update.</ParamField>
+
+### Request body (`multipart/form-data`)
+
+All fields from the create endpoint are accepted. The following fields are required on update:
+
+<ParamField body="asset_id" type="string" required>UUID of the existing asset to replace or keep.</ParamField>
+<ParamField body="asset_name" type="string" required>Name for the (potentially new) asset.</ParamField>
+<ParamField body="file" type="file" required>Replacement template file.</ParamField>
+<ParamField body="type" type="string" required>Asset/engine type identifier.</ParamField>
+<ParamField body="name" type="string" required>Updated layout name.</ParamField>
+<ParamField body="description" type="string" required>Updated description.</ParamField>
+<ParamField body="width" type="string" required>Updated page width.</ParamField>
+<ParamField body="height" type="string" required>Updated page height.</ParamField>
+<ParamField body="unit" type="string" required>Updated dimension unit.</ParamField>
+<ParamField body="screenshot" type="file" required>Updated preview image.</ParamField>
+<ParamField body="engine_id" type="string" required>Updated engine UUID.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/layouts/layout-uuid-0001 \
+  -H "Authorization: Bearer <token>" \
+  -F "name=Standard A4 Letter v2" \
+  -F "description=Updated A4 letter with revised margins" \
+  -F "asset_id=asset-uuid-001" \
+  -F "asset_name=standard-letter-template-v2" \
+  -F "type=typst" \
+  -F "width=210" \
+  -F "height=297" \
+  -F "unit=mm" \
+  -F "engine_id=engine-typst-uuid" \
+  -F "file=@letter_template_v2.typ" \
+  -F "screenshot=@letter_preview_v2.png"
+```
+</CodeGroup>
+
+---
+
+## Delete a layout
+
+`DELETE /api/v1/layouts/:id`
+
+Permanently deletes a layout and removes it from the Typesense index. Deletion will fail if any content types reference this layout.
+
+**Required permission:** `layout:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the layout to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/layouts/layout-uuid-0001 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Remove an asset from a layout
+
+`DELETE /api/v1/layouts/:id/assets/:a_id`
+
+Removes the association between a specific asset and a layout. The asset record itself is not deleted — only the layout-asset link is removed. The updated layout (with remaining assets) is returned.
+
+**Required permission:** `layout:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the layout.</ParamField>
+<ParamField path="a_id" type="string" required>UUID of the asset to disassociate.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE \
+  "https://api.wraft.com/api/v1/layouts/layout-uuid-0001/assets/asset-uuid-001" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## List rendering engines
+
+`GET /api/v1/engines`
+
+Returns all available rendering engines configured in this Wraft instance. Engines correspond to document generation backends (currently Typst and LaTeX/Pandoc). The `id` returned here is passed as `engine_id` when creating or updating layouts.
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/engines" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+[
+  {
+    "id": "engine-typst-uuid",
+    "name": "Typst",
+    "api_route": ""
+  },
+  {
+    "id": "engine-latex-uuid",
+    "name": "LaTeX",
+    "api_route": ""
+  }
+]
+```
+</CodeGroup>
+
+<Tip>
+  **Typst** is recommended for new layouts — it provides faster builds, better error messages, and native support for modern typographic features. Use **LaTeX** only when migrating existing `.tex` templates.
+</Tip>
+
+### Engine response fields
+
+<ResponseField name="id" type="string">UUID of the engine. Pass this as `engine_id` when creating layouts.</ResponseField>
+<ResponseField name="name" type="string">Human-readable engine name (`Typst` or `LaTeX`).</ResponseField>
+<ResponseField name="api_route" type="string">Internal routing key used by the rendering service. Typically empty for hosted Wraft instances.</ResponseField>

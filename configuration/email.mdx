@@ -1,0 +1,182 @@
+---
+title: "Configuring Transactional Email Delivery for Wraft Apps"
+sidebarTitle: "Email"
+description: "Configure Wraft's email delivery using Resend (recommended) or an SMTP relay for invitations, password resets, approvals, and document notifications."
+---
+
+Wraft sends transactional emails at several points in the document lifecycle: email address verification when a new user registers, password reset links, organisation invitation emails, document approval notifications, and scheduled reminders. Email delivery is handled by [Swoosh](https://github.com/swoosh/swoosh), which supports multiple adapters. Wraft ships with first-class support for [Resend](https://resend.com) (the default) and a standard SMTP adapter as a fallback.
+
+The sender address for all outbound emails is derived from the `WRAFT_HOSTNAME` environment variable — Wraft constructs `no-reply@<WRAFT_HOSTNAME>` as the from address. Set this to your verified sending domain.
+
+## Types of Emails Wraft Sends
+
+<CardGroup cols={2}>
+  <Card title="Email Verification" icon="envelope-open-text">
+    Sent when a new user registers. Contains a verification link the user must click before accessing the platform.
+  </Card>
+  <Card title="Password Reset" icon="key">
+    Sent when a user requests a password reset. Contains a time-limited reset link.
+  </Card>
+  <Card title="Organisation Invitations" icon="user-plus">
+    Sent when an admin invites a new member to an organisation. Includes an accept link pre-scoped to the organisation.
+  </Card>
+  <Card title="Approval Notifications" icon="check-circle">
+    Sent to reviewers and approvers when a document enters a state that requires their action in the approval workflow.
+  </Card>
+  <Card title="Reminders" icon="bell">
+    Scheduled reminder emails (processed nightly by the `ReminderWorker`) for pending approvals and outstanding tasks.
+  </Card>
+  <Card title="Document Notifications" icon="file-lines">
+    Notifications triggered by document state changes, such as a document being signed or published.
+  </Card>
+</CardGroup>
+
+---
+
+## Choosing an Email Adapter
+
+<Tabs>
+  <Tab title="Resend (Recommended)">
+    [Resend](https://resend.com) is the default and recommended email adapter. When `RESEND_API_KEY` is present in the environment, Wraft automatically configures the `Resend.Swoosh.Adapter`.
+
+    ### Setup
+
+    <Steps>
+      <Step title="Create a Resend account">
+        Sign up at [resend.com](https://resend.com) and verify your sending domain under **Domains**.
+      </Step>
+
+      <Step title="Generate an API key">
+        In the Resend dashboard, go to **API Keys** and create a new key with `Sending access`. Copy the key — it will only be shown once.
+      </Step>
+
+      <Step title="Set environment variables">
+        ```shell .env.dev
+        export RESEND_API_KEY=re_your_api_key_here
+        export WRAFT_HOSTNAME=yourdomain.com
+        ```
+      </Step>
+    </Steps>
+
+    ### How it works
+
+    When `RESEND_API_KEY` is set, `runtime.exs` applies the following configuration automatically:
+
+    ```elixir config/runtime.exs
+    if api_key = System.get_env("RESEND_API_KEY") do
+      config :wraft_doc, WraftDocWeb.Mailer,
+        adapter: Resend.Swoosh.Adapter,
+        api_key: api_key
+    end
+    ```
+
+    The sender address is set to `no-reply@<WRAFT_HOSTNAME>` using:
+
+    ```elixir config/runtime.exs
+    config :wraft_doc, sender_email: "no-reply@#{System.get_env("WRAFT_HOSTNAME")}"
+    ```
+
+    <Note>
+    Resend requires that the sending domain is verified in your Resend account. Emails sent from an unverified domain will be rejected by the API.
+    </Note>
+  </Tab>
+
+  <Tab title="SMTP">
+    For deployments that need to route email through an existing mail infrastructure — corporate SMTP relays, SendGrid SMTP, Postmark SMTP, and so on — set `EMAIL_ADAPTER=smtp` and configure the SMTP variables. When `SMTP_HOST` is present in the environment, `runtime.exs` configures `Swoosh.Adapters.SMTP` and this takes precedence over Resend.
+
+    ### Setup
+
+    <Steps>
+      <Step title="Obtain SMTP credentials">
+        Retrieve the SMTP host, port, username, and password from your mail provider or IT team.
+      </Step>
+
+      <Step title="Set environment variables">
+        ```shell .env.dev
+        export EMAIL_ADAPTER=smtp
+        export SMTP_HOST=smtp.gmail.com
+        export SMTP_PORT=587
+        export SMTP_USERNAME=your-address@gmail.com
+        export SMTP_PASSWORD=your-app-password
+        export SMTP_SSL=false
+        export WRAFT_HOSTNAME=yourdomain.com
+        ```
+      </Step>
+    </Steps>
+
+    ### Configuration reference
+
+    | Variable | Required | Default | Description |
+    |---|---|---|---|
+    | `EMAIL_ADAPTER` | Optional | — | Set to `smtp` to signal SMTP usage (the actual adapter is activated by `SMTP_HOST`) |
+    | `SMTP_HOST` | ✅ Yes | — | Hostname of the SMTP relay |
+    | `SMTP_PORT` | Optional | `587` | SMTP port. Common values: `587` (STARTTLS), `465` (SSL), `25` (plain) |
+    | `SMTP_USERNAME` | ✅ Yes | — | SMTP authentication username |
+    | `SMTP_PASSWORD` | ✅ Yes | — | SMTP authentication password |
+    | `SMTP_SSL` | Optional | `false` | Set to `true` to enable SSL mode on the connection |
+
+    ### How it works
+
+    When `SMTP_HOST` is set, the following configuration is applied at runtime:
+
+    ```elixir config/runtime.exs
+    if smtp_host = System.get_env("SMTP_HOST") do
+      smtp_port = String.to_integer(System.get_env("SMTP_PORT") || "587")
+
+      config :wraft_doc, WraftDocWeb.Mailer,
+        adapter: Swoosh.Adapters.SMTP,
+        relay: smtp_host,
+        username: System.get_env("SMTP_USERNAME"),
+        password: System.get_env("SMTP_PASSWORD"),
+        ssl: System.get_env("SMTP_SSL") || false,
+        tls: :always,
+        auth: :always,
+        port: smtp_port,
+        retries: 2,
+        no_mx_lookups: true
+    end
+    ```
+
+    <Warning>
+    If both `RESEND_API_KEY` and `SMTP_HOST` are set, the SMTP configuration evaluated last in `runtime.exs` will override Resend. To avoid conflicts, set only one of the two.
+    </Warning>
+  </Tab>
+</Tabs>
+
+---
+
+## Sender Domain — WRAFT_HOSTNAME
+
+The `WRAFT_HOSTNAME` variable is used to construct the `From` address for every email Wraft sends:
+
+```
+no-reply@<WRAFT_HOSTNAME>
+```
+
+Set it to the domain you have verified with your email provider. For example, if your Resend domain is `mail.wraft.app`, set:
+
+```shell
+export WRAFT_HOSTNAME=mail.wraft.app
+```
+
+<Note>
+`WRAFT_HOSTNAME` is also read at compile time inside `config/config.exs` to set the default `sender_email`. Make sure it is exported before running `mix compile` or `mix setup`.
+</Note>
+
+---
+
+## Testing Emails in Development
+
+Wraft includes the [Swoosh MailboxPreview](https://hexdocs.pm/swoosh/Swoosh.html#module-mailbox-preview-plug) in the development environment. This in-memory mailbox intercepts outbound emails so you can inspect them in the browser without an actual email service.
+
+Open your browser and navigate to:
+
+```
+http://localhost:4000/dev/mailbox
+```
+
+The mailbox is only mounted when `MIX_ENV=dev` — it is not available in production. No additional configuration is required.
+
+<Tip>
+Use the development mailbox to verify email templates, subject lines, and links before wiring up a live email provider.
+</Tip>

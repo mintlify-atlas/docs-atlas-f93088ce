@@ -1,0 +1,555 @@
+---
+title: "Wraft API Authentication: JWT Bearer Tokens and API Keys"
+sidebarTitle: "Authentication"
+description: "Learn how to authenticate with the Wraft API using JWT Bearer tokens or long-lived API keys, including sign-up, refresh, Google SSO, and password reset."
+---
+
+Wraft supports two authentication mechanisms that can be used interchangeably on protected endpoints. **JWT Bearer tokens** are issued at sign-in and are well suited for user-facing applications and interactive sessions. **API keys** are long-lived credentials tied to an organisation and are the preferred choice for server-to-server integrations and automated pipelines. This guide walks through the full lifecycle of each method, plus email verification and password reset flows.
+
+<Note>
+  Never store access tokens, refresh tokens, or API keys in client-side JavaScript, public repositories, or unencrypted storage. Use environment variables or a secrets manager in server environments. Treat a leaked key or token with the same urgency as a leaked password — revoke it immediately and issue a replacement.
+</Note>
+
+---
+
+<Tabs>
+  <Tab title="JWT Bearer Token">
+
+    JWT Bearer token authentication is a two-step process: obtain a token pair by signing in (or signing up), then attach the access token to every subsequent API request.
+
+    ## Sign Up
+
+    Create a new Wraft account. On success the response includes an access token and refresh token so the user is immediately signed in.
+
+    ```http
+    POST /api/v1/users/signup
+    ```
+
+    <ParamField body="name" type="string" required>
+      The user's display name.
+    </ParamField>
+
+    <ParamField body="email" type="string" required>
+      The user's email address. Must be unique across the platform.
+    </ParamField>
+
+    <ParamField body="password" type="string" required>
+      The user's chosen password.
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST http://localhost:4000/api/v1/users/signup \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "password": "s3cur3P@ssw0rd"
+      }'
+    ```
+
+    ```json Response
+    {
+      "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "email_verify": false
+      }
+    }
+    ```
+    </CodeGroup>
+
+    <Note>
+      After sign-up, Wraft sends a verification email. The account is fully active, but some features may require email verification. See the [Email Verification](#email-verification) section below.
+    </Note>
+
+    ---
+
+    ## Sign In
+
+    Exchange email and password credentials for a JWT access token and a refresh token.
+
+    ```http
+    POST /api/v1/users/signin
+    ```
+
+    <ParamField body="email" type="string" required>
+      The registered email address.
+    </ParamField>
+
+    <ParamField body="password" type="string" required>
+      The account password.
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST http://localhost:4000/api/v1/users/signin \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "ada@example.com",
+        "password": "s3cur3P@ssw0rd"
+      }'
+    ```
+
+    ```json Response
+    {
+      "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com"
+      }
+    }
+    ```
+    </CodeGroup>
+
+    ---
+
+    ## Using the Access Token
+
+    Attach the access token to every subsequent request in the `Authorization` header using the `Bearer` scheme:
+
+    ```bash
+    curl -X GET http://localhost:4000/api/v1/users/me \
+      -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+    ```
+
+    <Warning>
+      Access tokens are short-lived JWTs. When a request returns `401 Unauthorized`, check whether the token has expired and use the refresh token flow below to obtain a new pair.
+    </Warning>
+
+    ---
+
+    ## Refresh the Access Token
+
+    When the access token expires, use the refresh token to obtain a new access token and a new refresh token without requiring the user to sign in again.
+
+    ```http
+    POST /api/v1/users/token_refresh
+    ```
+
+    <ParamField body="token" type="string" required>
+      The `refresh_token` value received at sign-in or the previous refresh call.
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST http://localhost:4000/api/v1/users/token_refresh \
+      -H "Content-Type: application/json" \
+      -d '{
+        "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+      }'
+    ```
+
+    ```json Response
+    {
+      "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+    }
+    ```
+    </CodeGroup>
+
+    <Note>
+      Each successful refresh issues a fresh token pair. Discard the old tokens and store the new ones. Reusing an already-exchanged refresh token will return `401 Unauthorized`.
+    </Note>
+
+    ---
+
+    ## Sign In with Google SSO
+
+    If your Wraft instance has Google OAuth configured, users can authenticate using a Google OAuth token instead of a password.
+
+    ```http
+    POST /api/v1/users/signin/google
+    ```
+
+    <ParamField body="token" type="string" required>
+      A valid Google OAuth ID token obtained from the Google Sign-In flow on your client application.
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST http://localhost:4000/api/v1/users/signin/google \
+      -H "Content-Type: application/json" \
+      -d '{
+        "token": "<google_oauth_id_token>"
+      }'
+    ```
+
+    ```json Response
+    {
+      "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "email_verify": true
+      }
+    }
+    ```
+    </CodeGroup>
+
+    Wraft validates the Google token, marks the user's email as verified, and returns the same token pair format as the standard sign-in endpoint.
+
+  </Tab>
+
+  <Tab title="API Key">
+
+    API keys are long-lived credentials scoped to an organisation. Unlike JWTs they do not expire automatically (unless you set an `expires_at` during creation) and do not require periodic refresh, making them suitable for background jobs, CI/CD pipelines, and third-party integrations.
+
+    ## Create an API Key
+
+    You must hold an active JWT session with the `api_key:manage` permission to create an API key.
+
+    ```http
+    POST /api/v1/api_keys
+    ```
+
+    <ParamField body="name" type="string" required>
+      A human-readable name for the key (3–100 characters). Must be unique within the organisation.
+    </ParamField>
+
+    <ParamField body="expires_at" type="string">
+      Optional ISO 8601 datetime. If omitted, the key does not expire. Must be in the future.
+    </ParamField>
+
+    <ParamField body="rate_limit" type="integer">
+      Maximum number of requests per hour for this key. Defaults to `1000`. Must be greater than `0`.
+    </ParamField>
+
+    <ParamField body="ip_whitelist" type="array">
+      Optional list of IP addresses allowed to use this key. An empty array (the default) allows all IPs.
+    </ParamField>
+
+    <ParamField body="metadata" type="object">
+      Optional free-form metadata map for your own reference (e.g. service name, environment).
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST http://localhost:4000/api/v1/api_keys \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..." \
+      -d '{
+        "name": "CI Pipeline Key",
+        "rate_limit": 500,
+        "expires_at": "2026-12-31T23:59:59Z",
+        "metadata": {
+          "environment": "production",
+          "service": "document-generator"
+        }
+      }'
+    ```
+
+    ```json Response (201 Created)
+    {
+      "id": "a3b4c5d6-e7f8-1234-abcd-0987654321ef",
+      "name": "CI Pipeline Key",
+      "key": "wraft_3f9a1b2c_Kx7mP2qR...",
+      "key_prefix": "3f9a1b2c",
+      "is_active": true,
+      "rate_limit": 500,
+      "expires_at": "2026-12-31T23:59:59Z",
+      "ip_whitelist": [],
+      "usage_count": 0,
+      "last_used_at": null,
+      "metadata": {
+        "environment": "production",
+        "service": "document-generator"
+      },
+      "inserted_at": "2025-01-15T10:30:00Z",
+      "updated_at": "2025-01-15T10:30:00Z"
+    }
+    ```
+    </CodeGroup>
+
+    <Warning>
+      The full key value (the `key` field, formatted as `wraft_<prefix>_<random>`) is only returned **once** in the creation response. Wraft stores only a bcrypt hash of the key and cannot recover the original value. Copy it to a secure location immediately.
+    </Warning>
+
+    ---
+
+    ## Using an API Key
+
+    Pass the API key in the `x-api-key` header on every request. No `Authorization` header is required.
+
+    ```bash
+    curl -X GET http://localhost:4000/api/v1/users/me \
+      -H "x-api-key: wraft_3f9a1b2c_Kx7mP2qR..."
+    ```
+
+    ---
+
+    ## List API Keys
+
+    Retrieve all API keys belonging to the current organisation.
+
+    ```http
+    GET /api/v1/api_keys
+    ```
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X GET "http://localhost:4000/api/v1/api_keys?page=1" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+    ```
+
+    ```json Response
+    {
+      "api_keys": [
+        {
+          "id": "a3b4c5d6-e7f8-1234-abcd-0987654321ef",
+          "name": "CI Pipeline Key",
+          "key_prefix": "3f9a1b2c",
+          "is_active": true,
+          "rate_limit": 500,
+          "expires_at": "2026-12-31T23:59:59Z",
+          "usage_count": 42,
+          "last_used_at": "2025-06-01T08:22:10Z"
+        }
+      ],
+      "page_number": 1,
+      "total_pages": 1,
+      "total_entries": 1
+    }
+    ```
+    </CodeGroup>
+
+    ---
+
+    ## Enable or Disable an API Key
+
+    Toggle an API key between active and inactive states without deleting it. An inactive key returns `401 Unauthorized` on all requests.
+
+    ```http
+    PATCH /api/v1/api_keys/:id/toggle
+    ```
+
+    <ParamField path="id" type="string" required>
+      The UUID of the API key to toggle.
+    </ParamField>
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X PATCH http://localhost:4000/api/v1/api_keys/a3b4c5d6-e7f8-1234-abcd-0987654321ef/toggle \
+      -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+    ```
+
+    ```json Response
+    {
+      "id": "a3b4c5d6-e7f8-1234-abcd-0987654321ef",
+      "name": "CI Pipeline Key",
+      "key_prefix": "3f9a1b2c",
+      "is_active": false,
+      "rate_limit": 500
+    }
+    ```
+    </CodeGroup>
+
+    ---
+
+    ## Delete an API Key
+
+    Permanently remove an API key. This action cannot be undone.
+
+    ```http
+    DELETE /api/v1/api_keys/:id
+    ```
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X DELETE \
+      http://localhost:4000/api/v1/api_keys/a3b4c5d6-e7f8-1234-abcd-0987654321ef \
+      -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
+    ```
+
+    ```text Response (204 No Content)
+    (empty body)
+    ```
+    </CodeGroup>
+
+  </Tab>
+</Tabs>
+
+---
+
+## Email Verification
+
+After creating an account via sign-up, Wraft sends a verification email containing a unique token. Verifying your email unlocks full platform access.
+
+<Steps>
+  <Step title="Receive the verification email">
+    Wraft automatically sends a verification email to the address provided at sign-up. The email contains a link with a verification token.
+  </Step>
+  <Step title="Verify the token">
+    Call the verification endpoint with the token from the email link:
+
+    ```http
+    GET /api/v1/user/verify_email_token/:token
+    ```
+
+    <ParamField path="token" type="string" required>
+      The email verification token extracted from the link in the verification email.
+    </ParamField>
+
+    ```bash
+    curl -X GET \
+      http://localhost:4000/api/v1/user/verify_email_token/abc123def456...
+    ```
+
+    ```json
+    {
+      "verification_status": true
+    }
+    ```
+  </Step>
+  <Step title="Resend if expired">
+    If the token has expired before you could use it, request a new one:
+
+    ```http
+    POST /api/v1/user/resend_email_token
+    ```
+
+    <ParamField body="token" type="string" required>
+      The expired token value from the original verification email.
+    </ParamField>
+
+    ```bash
+    curl -X POST http://localhost:4000/api/v1/user/resend_email_token \
+      -H "Content-Type: application/json" \
+      -d '{"token": "abc123def456..."}'
+    ```
+
+    ```json
+    {
+      "info": "Success"
+    }
+    ```
+
+    A new verification email will be dispatched to the same address.
+  </Step>
+</Steps>
+
+---
+
+## Password Reset
+
+Use this flow when a user has forgotten their password and needs to regain access to their account.
+
+<Steps>
+  <Step title="Request a reset token">
+    Submit the user's email address to generate a password reset token. Wraft sends a reset link to the address if it matches a registered account.
+
+    ```http
+    POST /api/v1/user/password/forgot
+    ```
+
+    <ParamField body="email" type="string" required>
+      The email address of the account whose password should be reset.
+    </ParamField>
+
+    ```bash
+    curl -X POST http://localhost:4000/api/v1/user/password/forgot \
+      -H "Content-Type: application/json" \
+      -d '{"email": "ada@example.com"}'
+    ```
+
+    ```json
+    {
+      "info": "Success"
+    }
+    ```
+  </Step>
+  <Step title="Verify the reset token">
+    Before presenting a new-password form, confirm the token from the reset email is valid. This also extends the token's validity for the final reset step.
+
+    ```http
+    GET /api/v1/user/password/reset/:token
+    ```
+
+    <ParamField path="token" type="string" required>
+      The password reset token from the link in the reset email.
+    </ParamField>
+
+    ```bash
+    curl -X GET \
+      http://localhost:4000/api/v1/user/password/reset/xyz789token...
+    ```
+
+    ```json
+    {
+      "token": "xyz789token..."
+    }
+    ```
+
+    A `401 Unauthorized` response means the token is invalid or has already been used.
+  </Step>
+  <Step title="Set the new password">
+    Submit the verified token together with the new password to complete the reset.
+
+    ```http
+    POST /api/v1/user/password/reset
+    ```
+
+    <ParamField body="token" type="string" required>
+      The verified password reset token.
+    </ParamField>
+
+    <ParamField body="password" type="string" required>
+      The new password for the account.
+    </ParamField>
+
+    <ParamField body="password_confirmation" type="string" required>
+      Must match the `password` field exactly.
+    </ParamField>
+
+    ```bash
+    curl -X POST http://localhost:4000/api/v1/user/password/reset \
+      -H "Content-Type: application/json" \
+      -d '{
+        "token": "xyz789token...",
+        "password": "newS3cur3P@ss",
+        "password_confirmation": "newS3cur3P@ss"
+      }'
+    ```
+
+    ```json
+    {
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "name": "Ada Lovelace",
+      "email": "ada@example.com"
+    }
+    ```
+
+    After a successful reset, direct the user to sign in with their new password using the standard `/api/v1/users/signin` endpoint.
+  </Step>
+</Steps>
+
+---
+
+## Quick Reference
+
+The table below summarises every authentication-related endpoint covered on this page:
+
+| Method | Path | Description | Auth required |
+|---|---|---|---|
+| `POST` | `/api/v1/users/signup` | Register a new account | No |
+| `POST` | `/api/v1/users/signin` | Sign in with email + password | No |
+| `POST` | `/api/v1/users/signin/google` | Sign in with Google OAuth token | No |
+| `POST` | `/api/v1/users/token_refresh` | Exchange refresh token for new pair | No |
+| `GET` | `/api/v1/user/verify_email_token/:token` | Verify email address | No |
+| `POST` | `/api/v1/user/resend_email_token` | Resend verification email | No |
+| `POST` | `/api/v1/user/password/forgot` | Request password reset email | No |
+| `GET` | `/api/v1/user/password/reset/:token` | Validate reset token | No |
+| `POST` | `/api/v1/user/password/reset` | Apply new password | No |
+| `POST` | `/api/v1/api_keys` | Create an API key | JWT |
+| `GET` | `/api/v1/api_keys` | List API keys | JWT |
+| `GET` | `/api/v1/api_keys/:id` | Show a single API key | JWT |
+| `PUT` | `/api/v1/api_keys/:id` | Update an API key | JWT |
+| `PATCH` | `/api/v1/api_keys/:id/toggle` | Toggle active/inactive | JWT |
+| `DELETE` | `/api/v1/api_keys/:id` | Delete an API key | JWT |

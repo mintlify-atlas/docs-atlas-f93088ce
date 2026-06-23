@@ -1,0 +1,274 @@
+---
+title: "Themes API: Fonts, Colors, and Typescale Configuration"
+sidebarTitle: "Themes"
+description: "Create and manage themes that control document typography — fonts, typescale sizes, and brand colors (body, primary, secondary) applied during PDF rendering."
+---
+
+A theme controls the visual presentation of rendered documents. It packages together a font family, a typescale map (heading and paragraph sizes), and optional brand colours (body, primary, secondary). Themes are referenced by content types and are applied by the rendering engine during PDF generation. Optional font assets — TrueType (`.ttf`) or OpenType (`.otf`) font files — can be attached via the asset system.
+
+All colour fields must be valid hex codes in `#RRGGBB` or `#RGB` format. Theme changes only affect newly rendered documents; existing build PDFs are not retroactively updated.
+
+<Note>
+  Theme operations require the `theme` permission group: `theme:manage` to create or update, `theme:show` to read, `theme:delete` to delete.
+</Note>
+
+---
+
+## Create a theme
+
+`POST /api/v1/themes`
+
+Creates a new theme in the authenticated user's organisation. The request uses `multipart/form-data` to support an optional preview image upload. After creation, the theme is indexed in Typesense.
+
+**Required permission:** `theme:manage`
+
+### Request body (`multipart/form-data`)
+
+<ParamField body="name" type="string" required>
+  Display name for the theme. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="font" type="string">
+  Name of the font family to use for document body text (e.g. `"Roboto"`, `"Lato"`, `"Georgia"`). If custom font asset files are uploaded, this must match the font family name they export.
+</ParamField>
+
+<ParamField body="typescale" type="object">
+  JSON object mapping heading levels and paragraph tags to point sizes. Example: `{"h1": 24, "h2": 18, "h3": 14, "p": 11}`. Keys and size values are passed to the rendering engine.
+</ParamField>
+
+<ParamField body="body_color" type="string">
+  Hex colour code for body text (e.g. `"#1A1A1A"`). Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="primary_color" type="string">
+  Hex colour code for primary brand elements (headers, links, highlights). Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="secondary_color" type="string">
+  Hex colour code for secondary brand elements. Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="assets" type="array">
+  Array of existing asset UUIDs (font files previously uploaded via the asset API) to associate with this theme. Example: `["asset-uuid-1", "asset-uuid-2"]`.
+</ParamField>
+
+<ParamField body="preview_file" type="file">
+  Preview image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.pdf`) shown in the theme picker UI.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/themes \
+  -H "Authorization: Bearer <token>" \
+  -F "name=Corporate Blue" \
+  -F "font=Roboto" \
+  -F 'typescale={"h1":24,"h2":18,"h3":14,"p":11}' \
+  -F "body_color=#1A1A1A" \
+  -F "primary_color=#1E40AF" \
+  -F "secondary_color=#60A5FA" \
+  -F "preview_file=@corporate_blue_preview.png"
+```
+
+```json Response
+{
+  "id": "theme-uuid-0001",
+  "name": "Corporate Blue",
+  "font": "Roboto",
+  "typescale": { "h1": 24, "h2": 18, "h3": 14, "p": 11 },
+  "body_color": "#1A1A1A",
+  "primary_color": "#1E40AF",
+  "secondary_color": "#60A5FA",
+  "preview_file": "/uploads/themes/corporate_blue_preview.png",
+  "assets": [],
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the newly created theme.</ResponseField>
+<ResponseField name="name" type="string">Theme display name.</ResponseField>
+<ResponseField name="font" type="string">Font family name applied to document body text.</ResponseField>
+<ResponseField name="typescale" type="object">
+  Key/value map of text element → point size. Keys typically include `h1`, `h2`, `h3`, `p`.
+</ResponseField>
+<ResponseField name="body_color" type="string">Hex colour code for body text (`#RRGGBB`).</ResponseField>
+<ResponseField name="primary_color" type="string">Hex colour code for primary brand elements.</ResponseField>
+<ResponseField name="secondary_color" type="string">Hex colour code for secondary brand elements.</ResponseField>
+<ResponseField name="preview_file" type="string">URL of the uploaded preview image (if provided).</ResponseField>
+<ResponseField name="assets" type="array">
+  Array of associated asset UUIDs (font files). Each entry is a string UUID referencing an asset record.
+</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+
+---
+
+## List themes
+
+`GET /api/v1/themes`
+
+Returns a paginated list of all themes in the authenticated user's organisation.
+
+**Required permission:** `theme:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+
+<ParamField query="name" type="string">
+  Filter by theme name (substring match).
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/themes?page=1&sort=name" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "themes": [
+    {
+      "id": "theme-uuid-0001",
+      "name": "Corporate Blue",
+      "font": "Roboto",
+      "typescale": { "h1": 24, "h2": 18, "p": 11 },
+      "body_color": "#1A1A1A",
+      "primary_color": "#1E40AF",
+      "secondary_color": "#60A5FA",
+      "inserted_at": "2024-06-01T10:00:00Z",
+      "updated_at": "2024-06-01T10:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 3
+}
+```
+</CodeGroup>
+
+---
+
+## Show a theme
+
+`GET /api/v1/themes/:id`
+
+Returns full details of a single theme, including the creator's profile and attached font assets.
+
+**Required permission:** `theme:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the theme.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/themes/theme-uuid-0001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "theme": {
+    "id": "theme-uuid-0001",
+    "name": "Corporate Blue",
+    "font": "Roboto",
+    "typescale": { "h1": 24, "h2": 18, "h3": 14, "p": 11 },
+    "body_color": "#1A1A1A",
+    "primary_color": "#1E40AF",
+    "secondary_color": "#60A5FA",
+    "preview_file": "/uploads/themes/corporate_blue_preview.png",
+    "assets": [
+      "89face43-c408-4002-af3a-e8b2946f800a"
+    ],
+    "inserted_at": "2024-06-01T10:00:00Z",
+    "updated_at": "2024-06-01T10:00:00Z"
+  },
+  "creator": {
+    "id": "u1",
+    "name": "Bob Smith",
+    "email": "bob@example.com",
+    "email_verify": true
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## Update a theme
+
+`PUT /api/v1/themes/:id`
+
+Updates an existing theme. The request uses `multipart/form-data`. `name` and `font` are required on update; all other fields are optional. The Typesense index is refreshed after a successful update.
+
+**Required permission:** `theme:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the theme to update.</ParamField>
+
+### Request body (`multipart/form-data`)
+
+<ParamField body="name" type="string" required>Updated theme name.</ParamField>
+<ParamField body="font" type="string" required>Updated font family name.</ParamField>
+<ParamField body="typescale" type="string">Updated typescale JSON string (e.g. `'{"h1":28,"p":12}'`).</ParamField>
+<ParamField body="body_color" type="string">Updated body text hex colour.</ParamField>
+<ParamField body="primary_color" type="string">Updated primary brand hex colour.</ParamField>
+<ParamField body="secondary_color" type="string">Updated secondary brand hex colour.</ParamField>
+<ParamField body="assets" type="array">Updated list of font asset UUIDs.</ParamField>
+<ParamField body="preview_file" type="file">Replacement preview image file.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/themes/theme-uuid-0001 \
+  -H "Authorization: Bearer <token>" \
+  -F "name=Corporate Blue v2" \
+  -F "font=Inter" \
+  -F 'typescale={"h1":26,"h2":20,"h3":15,"p":12}' \
+  -F "primary_color=#1D4ED8"
+```
+</CodeGroup>
+
+---
+
+## Delete a theme
+
+`DELETE /api/v1/themes/:id`
+
+Permanently deletes a theme and removes it from the Typesense index. Deletion will fail if any content types reference this theme.
+
+**Required permission:** `theme:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the theme to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/themes/theme-uuid-0001 \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "theme-uuid-0001",
+  "name": "Corporate Blue",
+  "font": "Roboto",
+  "typescale": { "h1": 24, "h2": 18, "p": 11 },
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+<Tip>
+  Before deleting a theme, check that no content types are actively using it. Query `GET /api/v1/content_types` and filter by the theme name to confirm it is safe to remove.
+</Tip>

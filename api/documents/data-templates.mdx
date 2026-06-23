@@ -1,0 +1,360 @@
+---
+title: "Data Templates API: Reusable Document Prefill Templates"
+sidebarTitle: "Data Templates"
+description: "Create and manage data templates that pre-populate document instance fields, support variable substitution, and enable bulk document generation from CSV imports."
+---
+
+Data templates are reusable prefill blueprints that live inside a content type. When a document author creates a new instance, they can select a data template to pre-populate the `raw` editor content and `serialized` field values, reducing repetitive entry. Data templates also power bulk-build workflows, where each row of a CSV file is combined with a template to generate a batch of documents.
+
+Templates support a simple `[variable]` substitution syntax: values enclosed in square brackets (e.g. `[candidate_name]`) are replaced with data provided at instance creation time.
+
+<Note>
+  Data template operations require the `template` permission group: `template:manage` to create/update, `template:show` to read, `template:delete` to remove.
+</Note>
+
+---
+
+## Create a data template
+
+`POST /api/v1/content_types/:c_type_id/data_templates`
+
+Creates a new data template scoped to the given content type. The template is indexed in Typesense for full-text search across the organisation.
+
+**Required permission:** `template:manage`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>
+  UUID of the content type this data template belongs to.
+</ParamField>
+
+### Request body
+
+<ParamField body="title" type="string" required>
+  Display name for this template (e.g. `"Standard Offer — Engineering"`).
+</ParamField>
+
+<ParamField body="title_template" type="string" required>
+  Template string for generating the document instance title. Supports `[variable]` substitution, e.g. `"Offer letter for [candidate_name]"`.
+</ParamField>
+
+<ParamField body="data" type="string" required>
+  Raw markup template body. Supports `[variable]` placeholders that are replaced with `serialized` field values at instance creation time.
+</ParamField>
+
+<ParamField body="serialized" type="object" required>
+  Default field values map. Keys must match the `machine_name` of the content type's fields. Supports `[variable]` placeholders as values.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/data_templates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Standard Offer — Engineering",
+    "title_template": "Offer letter for [candidate_name]",
+    "data": "Dear [candidate_name],\n\nWe are pleased to offer you the position of [position] starting [start_date].\n\nYours sincerely,\nHR Team",
+    "serialized": {
+      "candidate_name": "[candidate_name]",
+      "position": "[position]",
+      "start_date": "[start_date]"
+    }
+  }'
+```
+
+```json Response
+{
+  "id": "dt-uuid-0001",
+  "title": "Standard Offer — Engineering",
+  "title_template": "Offer letter for [candidate_name]",
+  "data": "Dear [candidate_name],\n\nWe are pleased to offer you the position of [position]...",
+  "serialized": {
+    "candidate_name": "[candidate_name]",
+    "position": "[position]",
+    "start_date": "[start_date]"
+  },
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the new data template.</ResponseField>
+<ResponseField name="title" type="string">Display name of the template.</ResponseField>
+<ResponseField name="title_template" type="string">Document title template string with `[variable]` placeholders.</ResponseField>
+<ResponseField name="data" type="string">Raw markup content of the template body.</ResponseField>
+<ResponseField name="serialized" type="object">Default/template field value map.</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+
+---
+
+## List data templates for a content type
+
+`GET /api/v1/content_types/:c_type_id/data_templates`
+
+Returns a paginated list of data templates belonging to the specified content type.
+
+**Required permission:** `template:show`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>UUID of the content type.</ParamField>
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+
+<ParamField query="title" type="string">Filter by template title (substring match).</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `updated_at`, `updated_at_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/data_templates?page=1&sort=updated_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "data_templates": [
+    {
+      "id": "dt-uuid-0001",
+      "title": "Standard Offer — Engineering",
+      "title_template": "Offer letter for [candidate_name]",
+      "data": "Dear [candidate_name]...",
+      "serialized": { "candidate_name": "[candidate_name]" },
+      "content_type": {
+        "id": "3fa85f64-...",
+        "name": "Offer Letter",
+        "prefix": "OFFLET"
+      },
+      "inserted_at": "2024-06-01T10:00:00Z",
+      "updated_at": "2024-06-01T10:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 1
+}
+```
+</CodeGroup>
+
+---
+
+## List all data templates (organisation-wide)
+
+`GET /api/v1/data_templates`
+
+Returns a paginated list of every data template in the authenticated user's organisation, regardless of content type.
+
+**Required permission:** `template:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+<ParamField query="title" type="string">Filter by template title.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/data_templates?page=1&title=offer" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Show a data template
+
+`GET /api/v1/data_templates/:id`
+
+Returns full details of a single data template, including its parent content type and the creator's profile.
+
+**Required permission:** `template:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the data template.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/data_templates/dt-uuid-0001" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "data_template": {
+    "id": "dt-uuid-0001",
+    "title": "Standard Offer — Engineering",
+    "title_template": "Offer letter for [candidate_name]",
+    "data": "Dear [candidate_name],\n\nWe are pleased to offer you the position of [position]...",
+    "serialized": {
+      "candidate_name": "[candidate_name]",
+      "position": "[position]",
+      "start_date": "[start_date]"
+    },
+    "inserted_at": "2024-06-01T10:00:00Z",
+    "updated_at": "2024-06-01T10:00:00Z"
+  },
+  "creator": {
+    "id": "u1",
+    "name": "Bob Smith",
+    "email": "bob@example.com",
+    "email_verify": true
+  },
+  "content_type": {
+    "id": "3fa85f64-...",
+    "name": "Offer Letter",
+    "description": "Standard employment offer letter",
+    "prefix": "OFFLET"
+  }
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="data_template" type="object">
+  <Expandable title="data_template fields">
+    <ResponseField name="id" type="string">UUID of the data template.</ResponseField>
+    <ResponseField name="title" type="string">Template display name.</ResponseField>
+    <ResponseField name="title_template" type="string">Document title generation string.</ResponseField>
+    <ResponseField name="data" type="string">Raw markup body with variable placeholders.</ResponseField>
+    <ResponseField name="serialized" type="object">Default field values map.</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO-8601 creation timestamp.</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO-8601 last-updated timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="creator" type="object">Profile of the user who created the template.</ResponseField>
+<ResponseField name="content_type" type="object">Parent content type details.</ResponseField>
+
+---
+
+## Update a data template
+
+`PUT /api/v1/data_templates/:id`
+
+Updates an existing data template. All fields from the create request body are accepted. The Typesense index is refreshed after update.
+
+**Required permission:** `template:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the data template to update.</ParamField>
+
+### Request body
+
+Accepts the same fields as the create endpoint (`title`, `title_template`, `data`, `serialized`). All four fields are required on update.
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/data_templates/dt-uuid-0001 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Standard Offer — Engineering (Updated)",
+    "title_template": "Offer letter for [candidate_name] — [department]",
+    "data": "Dear [candidate_name],\n\nWe are pleased to offer you the position of [position] in the [department] team...",
+    "serialized": {
+      "candidate_name": "[candidate_name]",
+      "position": "[position]",
+      "department": "[department]",
+      "start_date": "[start_date]"
+    }
+  }'
+```
+</CodeGroup>
+
+---
+
+## Delete a data template
+
+`DELETE /api/v1/data_templates/:id`
+
+Permanently deletes a data template and removes it from the Typesense index. Any document instances already created using this template are unaffected.
+
+**Required permission:** `template:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the data template to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/data_templates/dt-uuid-0001 \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "dt-uuid-0001",
+  "title": "Standard Offer — Engineering",
+  "title_template": "Offer letter for [candidate_name]",
+  "data": "Dear [candidate_name]...",
+  "serialized": {},
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## Bulk import data templates from CSV
+
+`POST /api/v1/content_types/:c_type_id/data_templates/bulk_import`
+
+Enqueues a background job that reads a CSV file and creates one data template per row. The `mapping` parameter specifies how CSV column headers map to data template fields. Job processing is handled by Oban workers.
+
+**Required permission:** `template:manage`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>UUID of the content type to import templates into.</ParamField>
+
+### Request body (`multipart/form-data`)
+
+<ParamField body="file" type="file" required>
+  CSV source file. Each data row becomes one data template. The first row must be column headers.
+</ParamField>
+
+<ParamField body="mapping" type="string" required>
+  JSON string mapping CSV column headers to data template field names. The keys are CSV headers; the values are one of `title`, `title_template`, `data`, or a `serialized` field key.
+  
+  Example: `{"Template Name": "title", "Title Format": "title_template", "Body": "data"}`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST \
+  "https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/data_templates/bulk_import" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@templates.csv" \
+  -F 'mapping={"Template Name":"title","Title Format":"title_template","Body":"data"}'
+```
+
+```json Response
+{
+  "info": "Data Template will be created soon"
+}
+```
+</CodeGroup>
+
+<Tip>
+  The bulk import job processes rows asynchronously. After submitting, use the list endpoint (`GET /api/v1/content_types/:c_type_id/data_templates`) to monitor when new templates appear.
+</Tip>
+
+### CSV format example
+
+```csv
+Template Name,Title Format,Body
+Engineering Offer,Offer letter for [candidate_name],"Dear [candidate_name], we offer the role of [position]..."
+Sales Offer,Sales offer for [candidate_name],"Dear [candidate_name], we are excited to offer you [position]..."
+```

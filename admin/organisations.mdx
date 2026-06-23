@@ -1,0 +1,239 @@
+---
+title: "Managing Organisations in Wraft: A Complete Guide"
+sidebarTitle: "Organisations"
+description: "Learn how to create, configure, and manage organisations in Wraft — the top-level workspace that groups users, documents, content types, flows, and more."
+---
+
+An organisation is the top-level tenant unit in Wraft. Every resource — content types, layouts, themes, flows, documents, and users — lives inside an organisation. A single Wraft user account can belong to multiple organisations and switch between them freely. When a user registers for the first time, Wraft automatically provisions a personal organisation for them.
+
+## Organisation Fields
+
+Each organisation record stores the following attributes:
+
+| Field | Description |
+|---|---|
+| `name` | Display name for the organisation (unique per creator, cannot be `"Personal"`) |
+| `legal_name` | Official registered legal name (globally unique) |
+| `email` | Primary contact email (required) |
+| `url` | Organisation website URL |
+| `address` | Registered address |
+| `name_of_ceo` | Chief Executive Officer name |
+| `name_of_cto` | Chief Technology Officer name |
+| `gstin` | GST Identification Number (globally unique) |
+| `corporate_id` | Corporate registration number |
+| `phone` | Primary phone number |
+| `logo` | Uploaded logo image file |
+
+<Note>
+  The name `"Personal"` is reserved for the auto-generated personal workspace created at registration. You cannot create or rename an organisation to `"Personal"`.
+</Note>
+
+---
+
+## Creating an Organisation
+
+<Steps>
+  <Step title="Send a POST request to create the organisation">
+    Submit the organisation details as `multipart/form-data` to allow logo upload alongside the other fields.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://your-wraft-instance.com/api/v1/organisations \
+      -H "Authorization: Bearer <your_jwt_token>" \
+      -F "name=Acme Corporation" \
+      -F "legal_name=Acme Corporation Ltd" \
+      -F "email=admin@acme.com" \
+      -F "url=https://acme.com" \
+      -F "address=123 Main St, Bangalore" \
+      -F "name_of_ceo=Jane Smith" \
+      -F "name_of_cto=John Doe" \
+      -F "gstin=22AAAAA0000A1Z5" \
+      -F "corporate_id=U74999MH2020PTC123456" \
+      -F "phone=+91-9876543210" \
+      -F "logo=@/path/to/logo.png"
+    ```
+
+    ```json Response
+    {
+      "id": "d8f3a1b2-4c5e-6789-abcd-ef0123456789",
+      "name": "Acme Corporation",
+      "legal_name": "Acme Corporation Ltd",
+      "email": "admin@acme.com",
+      "url": "https://acme.com",
+      "address": "123 Main St, Bangalore",
+      "name_of_ceo": "Jane Smith",
+      "name_of_cto": "John Doe",
+      "gstin": "22AAAAA0000A1Z5",
+      "corporate_id": "U74999MH2020PTC123456",
+      "phone": "+91-9876543210",
+      "logo": "https://assets.wraft.com/logos/acme.png",
+      "inserted_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Default roles are provisioned automatically">
+    After creation, Wraft automatically creates two roles — `superadmin` and `editor` — and assigns the `superadmin` role to the creating user. See [Roles and Permissions](/admin/roles-and-permissions) for details.
+  </Step>
+</Steps>
+
+---
+
+## Viewing an Organisation
+
+Retrieve organisation details by ID. The response includes a virtual `members_count` field.
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/organisations/{id} \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+---
+
+## Updating an Organisation
+
+`PUT /api/v1/organisations/:id` accepts the same `multipart/form-data` fields as creation. The `name` field is silently ignored for the personal organisation to prevent renaming it.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://your-wraft-instance.com/api/v1/organisations/{id} \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -F "name=Acme Corporation Rebranded" \
+  -F "email=hello@acme.com" \
+  -F "url=https://new.acme.com"
+```
+
+```json Response
+{
+  "id": "d8f3a1b2-4c5e-6789-abcd-ef0123456789",
+  "name": "Acme Corporation Rebranded",
+  "email": "hello@acme.com",
+  "url": "https://new.acme.com"
+}
+```
+</CodeGroup>
+
+<Warning>
+  Only users with the `workspace:update` permission can update organisation details.
+</Warning>
+
+---
+
+## Managing Members
+
+### List Members
+
+Retrieve a paginated list of all members in the current organisation. Supports filtering by name or role and sorting by name or join date.
+
+```bash cURL
+curl -X GET "https://your-wraft-instance.com/api/v1/organisations/{id}/members?page=1&role=editor&sort=joined_at_desc" \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+Supported `sort` values: `name`, `name_desc`, `joined_at`, `joined_at_desc`.
+
+### Invite a Member
+
+Send an invitation email to a new user with one or more roles pre-assigned.
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/organisations/{id}/members \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "newmember@acme.com",
+    "role_ids": [
+      "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    ]
+  }'
+```
+
+```json Response
+{
+  "info": "Email sent successfully."
+}
+```
+</CodeGroup>
+
+<Note>
+  You cannot invite members to a personal organisation. At least one valid role from your organisation must be specified in `role_ids`.
+</Note>
+
+### Remove a Member
+
+```bash cURL
+curl -X DELETE https://your-wraft-instance.com/api/v1/organisations/{id}/members/{user_id} \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+The organisation owner cannot be removed. Requires the `members:manage` permission.
+
+---
+
+## Switching Organisations
+
+Users can belong to multiple organisations simultaneously. The JWT token encodes the currently active organisation (`current_org_id`). To switch, re-authenticate or request a new token scoped to the desired organisation.
+
+<Tip>
+  Wraft tracks `last_signed_in_org` on each user record, so users are automatically dropped back into their most recently active workspace after sign-in.
+</Tip>
+
+---
+
+## Organisation Fields (Custom Metadata)
+
+Organisation fields let you define custom metadata keys that are shared across the organisation and can be referenced inside document templates.
+
+### List Organisation Fields
+
+```bash cURL
+curl -X GET https://your-wraft-instance.com/api/v1/organisation_fields \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+### Create an Organisation Field
+
+```bash cURL
+curl -X POST https://your-wraft-instance.com/api/v1/organisation_fields \
+  -H "Authorization: Bearer <your_jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Registered Office City",
+    "field_type_id": "ft-uuid-here"
+  }'
+```
+
+Requires the `organisation_field:manage` permission.
+
+---
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="Create Organisation" icon="building-columns">
+    `POST /api/v1/organisations`
+  </Card>
+  <Card title="Show Organisation" icon="eye">
+    `GET /api/v1/organisations/:id`
+  </Card>
+  <Card title="Update Organisation" icon="pen-to-square">
+    `PUT /api/v1/organisations/:id`
+  </Card>
+  <Card title="Delete Organisation" icon="trash">
+    `DELETE /api/v1/organisations/:id`
+  </Card>
+  <Card title="List Members" icon="users">
+    `GET /api/v1/organisations/:id/members`
+  </Card>
+  <Card title="Invite Member" icon="envelope">
+    `POST /api/v1/organisations/:id/members`
+  </Card>
+  <Card title="List Org Fields" icon="list">
+    `GET /api/v1/organisation_fields`
+  </Card>
+  <Card title="Create Org Field" icon="plus">
+    `POST /api/v1/organisation_fields`
+  </Card>
+</CardGroup>

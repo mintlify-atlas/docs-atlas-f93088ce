@@ -1,0 +1,290 @@
+---
+title: "Layouts and Themes: Controlling PDF Rendering in Wraft"
+sidebarTitle: "Layouts & Themes"
+description: "Explore how Wraft Layouts define template structure using Typst or LaTeX, and how Themes apply colors, fonts, and typescale to generate polished PDFs."
+---
+
+When Wraft builds a document, it needs two things beyond the raw field values: a **Layout** that defines the structural template of the PDF and a **Theme** that supplies the visual styling. Together, they determine what the final rendered document looks like — page dimensions, margins, heading styles, brand colors, and the font family used throughout.
+
+## Layouts
+
+A Layout is a template definition that tells Wraft how to structure a document when rendering it to PDF. It contains the markup source file (written in Typst or LaTeX), page geometry settings, and an optional screenshot preview for the UI.
+
+### Layout Fields
+
+<CardGroup cols={2}>
+  <Card title="name" icon="tag">
+    Display name of the layout, unique within the organisation.
+  </Card>
+  <Card title="slug" icon="link">
+    A machine-readable identifier used inside templates to refer to the layout. Follows the same slug conventions as your rendering framework.
+  </Card>
+  <Card title="width / height / unit" icon="ruler">
+    Page dimensions and unit (e.g. `210`, `297`, `mm` for A4). Used by the engine to set the output page size.
+  </Card>
+  <Card title="margin" icon="frame">
+    An embedded `top`, `right`, `bottom`, `left` margin spec (all ≥ 0). Applied during rendering to define the printable area.
+  </Card>
+  <Card title="engine" icon="gear">
+    The rendering engine (Typst or XeLaTeX) that processes the layout's template file.
+  </Card>
+  <Card title="frame / asset" icon="file-code">
+    The template file (`.typ` or `.tex`) stored as an Asset, and an optional Frame providing structured field mappings.
+  </Card>
+</CardGroup>
+
+A Layout belongs to one organisation and can be referenced by many Content Types. Deleting a Layout is blocked if any Content Type still references it.
+
+### Rendering Engines
+
+Wraft supports two professional typesetting engines. The engine is configured on the Layout and determines the template syntax you use.
+
+<Tabs>
+  <Tab title="Typst">
+    Typst is a modern, compiled typesetting language designed for speed and expressiveness. It uses `.typ` files, has a clean syntax, and compiles documents in milliseconds. Typst is the recommended choice for new layouts in Wraft.
+
+    A minimal Typst template fragment with a Wraft field variable looks like:
+
+    ```typst
+    #set page(width: 210mm, height: 297mm)
+    #set text(font: "Inter", size: 11pt)
+
+    = Employment Contract
+
+    This agreement is entered into between *#employee_name* and
+    *#company_name*, effective #start_date.
+    ```
+  </Tab>
+  <Tab title="LaTeX / XeLaTeX">
+    XeLaTeX is the industry-standard typesetting engine, widely used for academic, legal, and technical documents. It uses `.tex` files and supports advanced typographic features including full Unicode and OpenType fonts.
+
+    A minimal LaTeX template fragment:
+
+    ```latex
+    \documentclass[a4paper,11pt]{article}
+    \usepackage{fontspec}
+    \setmainfont{Times New Roman}
+
+    \begin{document}
+    \section*{Employment Contract}
+
+    This agreement is entered into between \textbf{<%= employee_name %>}
+    and \textbf{<%= company_name %>}, effective <%= start_date %>.
+
+    \end{document}
+    ```
+  </Tab>
+</Tabs>
+
+To list all available engines on your Wraft instance:
+
+```http
+GET /api/v1/engines
+```
+
+### Layout Assets
+
+A Layout can have associated asset files — for example, embedded images, logo files, or supplementary font resources needed during rendering. Assets are managed separately and linked to Layouts.
+
+To remove a specific asset from a layout:
+
+```http
+DELETE /api/v1/layouts/:id/assets/:a_id
+```
+
+This removes the layout-asset association without deleting the underlying asset record.
+
+### Layout API
+
+<CodeGroup>
+
+```http List Layouts
+GET /api/v1/layouts?page=1&name=contract&sort=inserted_at_desc
+```
+
+```http Create Layout
+POST /api/v1/layouts
+Content-Type: multipart/form-data
+
+name=Employment Contract Layout
+description=Standard A4 employment contract template
+engine_id=<uuid>
+width=210
+height=297
+unit=mm
+slug=employment-contract
+file=<template file>
+asset_name=employment-contract-template
+type=layout
+screenshot=<preview image>
+```
+
+```http Show Layout
+GET /api/v1/layouts/:id
+```
+
+```http Update Layout
+PUT /api/v1/layouts/:id
+Content-Type: multipart/form-data
+```
+
+```http Delete Layout
+DELETE /api/v1/layouts/:id
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string" required>
+  Layout display name. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  A human-readable description of what this layout is for.
+</ParamField>
+
+<ParamField body="engine_id" type="string" required>
+  UUID of the rendering engine (Typst or XeLaTeX) to use.
+</ParamField>
+
+<ParamField body="file" type="file">
+  The template source file (`.typ` for Typst, `.tex` for LaTeX). Stored as an Asset and linked to the layout.
+</ParamField>
+
+<ParamField body="slug" type="string">
+  Machine-readable slug for the layout, used inside template references.
+</ParamField>
+
+<ParamField body="frame_id" type="string">
+  UUID of a Frame that provides structured field-to-template variable mappings.
+</ParamField>
+
+<Note>
+  Layout names must be unique within your organisation. Attempting to create a second Layout with the same name returns a validation error.
+</Note>
+
+---
+
+## Themes
+
+A Theme supplies the visual identity applied to a document when it is rendered. While the Layout defines structure and positioning, the Theme controls the look and feel: which font to use, what the brand colors are, and how heading and body sizes scale relative to each other.
+
+### Theme Fields
+
+<CardGroup cols={2}>
+  <Card title="name" icon="palette">
+    Display name of the theme, unique within the organisation.
+  </Card>
+  <Card title="font" icon="font">
+    The font family name to use, e.g. `"Inter"`, `"Roboto"`, or `"Times New Roman"`. The font must be available to the rendering engine.
+  </Card>
+  <Card title="primary_color" icon="droplet">
+    Hex color code in `#RRGGBB` or `#RGB` format for the primary brand color (headings, accents).
+  </Card>
+  <Card title="secondary_color" icon="droplet">
+    Hex color code for the secondary brand color (sub-headings, borders).
+  </Card>
+  <Card title="body_color" icon="droplet">
+    Hex color code for body text.
+  </Card>
+  <Card title="typescale" icon="text-size">
+    A JSON map of element types to point sizes, e.g. `{"h1": 20, "h2": 16, "p": 11}`.
+  </Card>
+</CardGroup>
+
+All three color fields must conform to the hex format `#RRGGBB` or `#RGB`. Providing an invalid hex value returns a validation error.
+
+Themes are organisation-scoped and can be referenced by any Content Type in the organisation. A Theme can also have multiple **asset files** attached — for example, custom font files (`.ttf`, `.otf`) or preview images (`.png`, `.jpg`, `.pdf`).
+
+### Theme API
+
+<CodeGroup>
+
+```http List Themes
+GET /api/v1/themes?page=1&name=corporate&sort=name
+```
+
+```http Create Theme
+POST /api/v1/themes
+Content-Type: multipart/form-data
+
+name=Corporate Blue
+font=Inter
+body_color=#1a1a2e
+primary_color=#0f3460
+secondary_color=#16213e
+typescale[h1]=20
+typescale[h2]=16
+typescale[p]=11
+assets[]=<asset-uuid-1>
+assets[]=<asset-uuid-2>
+preview_file=<preview image>
+```
+
+```http Show Theme
+GET /api/v1/themes/:id
+```
+
+```http Update Theme
+PUT /api/v1/themes/:id
+Content-Type: multipart/form-data
+```
+
+```http Delete Theme
+DELETE /api/v1/themes/:id
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string" required>
+  Theme display name. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="font" type="string">
+  Font family name. Required on update.
+</ParamField>
+
+<ParamField body="body_color" type="string">
+  Hex color for body text. Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="primary_color" type="string">
+  Hex color for primary elements. Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="secondary_color" type="string">
+  Hex color for secondary elements. Must match `#RRGGBB` or `#RGB`.
+</ParamField>
+
+<ParamField body="typescale" type="object">
+  Map of element types (`h1`, `h2`, `p`, etc.) to point sizes.
+</ParamField>
+
+<ParamField body="assets" type="array">
+  List of existing Asset UUIDs to attach to this theme (font files, preview resources).
+</ParamField>
+
+## How Layouts and Themes Work Together
+
+When a document build is triggered, Wraft follows this rendering pipeline:
+
+<Steps>
+  <Step title="Resolve the Content Type">
+    Wraft loads the document's Content Type, which references a Layout and a Theme.
+  </Step>
+  <Step title="Load the Layout template">
+    The Layout's associated asset file (the `.typ` or `.tex` template) is downloaded from object storage.
+  </Step>
+  <Step title="Inject Theme variables">
+    Theme properties (colors, font, typescale) are made available to the template as variables, so your template can reference `primary_color`, `font`, etc. directly.
+  </Step>
+  <Step title="Substitute field values">
+    Each field's `machine_name` is replaced with the corresponding value from the document instance's `serialized` map.
+  </Step>
+  <Step title="Compile with the engine">
+    The engine (Typst or XeLaTeX) processes the fully-composed template and outputs a PDF, which is stored in object storage and linked back to the instance.
+  </Step>
+</Steps>
+
+<Tip>
+  When creating a new Layout, upload a screenshot image alongside the template file. Wraft displays this preview in the UI so authors can quickly identify the correct layout when creating a Content Type.
+</Tip>

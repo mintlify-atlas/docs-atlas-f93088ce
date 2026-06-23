@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Wraft",
+  "projectType": "saas",
+  "projectName": "Wraft",
+  "projectDescription": "Wraft is an open-source Document Lifecycle Management platform for authoring, automating, approving, and e-signing structured business documents.",
   "theme": "luma",
-  "colors": {
-    "primary": "#7c7c7c",
-    "light": "#050505",
-    "dark": "#c1c1c1"
-  },
-  "favicon": "https://media.brand.dev/99030f3a-0460-449d-a511-9f41910fad40.jpg",
-  "logo": {
-    "light": "https://media.brand.dev/cf70cc39-7847-48bc-9ac4-2ab63250cc83.svg",
-    "dark": "https://media.brand.dev/cf70cc39-7847-48bc-9ac4-2ab63250cc83.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/wraft/wraft"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/wraft/wraft"
-    }
-  },
+  "primaryColor": "#7c7c7c",
+  "lightColor": "#050505",
+  "darkColor": "#c1c1c1",
   "navigation": {
     "tabs": [
       {
@@ -120,5 +103,48 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Document authoring with Markdown and JSON using Typst and LaTeX rendering engines",
+    "Content Types (document variants) with custom fields, layouts, themes, and approval flows",
+    "Automated document generation pipelines triggered by form submissions",
+    "Multi-stage approval workflows with role-based state transitions",
+    "Electronic signatures via DocuSign and Documenso integrations",
+    "AI-powered document extraction, suggestion, and refinement agents",
+    "Role-Based Access Control (RBAC) with fine-grained permissions per resource",
+    "Webhooks and API keys for third-party integrations",
+    "Self-hosted deployment via Docker Compose with MinIO, PostgreSQL, and Typesense",
+    "Version history, audit logs, and document collaboration support"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/users/signup",
+    "POST /api/v1/users/signin",
+    "GET /api/v1/users/me",
+    "GET /api/v1/content_types",
+    "POST /api/v1/content_types",
+    "GET /api/v1/content_types/:id/contents",
+    "POST /api/v1/content_types/:c_type_id/contents",
+    "GET /api/v1/contents/:id",
+    "PUT /api/v1/contents/:id",
+    "PATCH /api/v1/contents/:id/states",
+    "GET /api/v1/layouts",
+    "POST /api/v1/layouts",
+    "GET /api/v1/themes",
+    "POST /api/v1/themes",
+    "GET /api/v1/flows",
+    "POST /api/v1/flows",
+    "GET /api/v1/pipelines",
+    "POST /api/v1/pipelines",
+    "GET /api/v1/forms",
+    "POST /api/v1/forms",
+    "GET /api/v1/webhooks",
+    "POST /api/v1/webhooks",
+    "PATCH /api/v1/webhooks/:id/toggle",
+    "GET /api/v1/api_keys",
+    "POST /api/v1/api_keys",
+    "GET /api/v1/roles",
+    "POST /api/v1/roles",
+    "POST /api/v1/contents/:id/sign",
+    "GET /api/v1/dashboard_stats"
+  ]
 }

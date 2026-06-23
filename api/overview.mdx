@@ -1,0 +1,210 @@
+---
+title: "Wraft REST API Overview: Endpoints, Auth & Conventions"
+sidebarTitle: "API Overview"
+description: "A complete reference for the Wraft REST API v1 — base URLs, authentication methods, pagination, sorting, error handling, and all resource groups."
+---
+
+The Wraft REST API lets you integrate document lifecycle management into your own applications, automate document workflows, and build server-to-server integrations against your Wraft instance. Every endpoint communicates over HTTP, accepts and returns `application/json` payloads, and follows consistent conventions for pagination, sorting, and error reporting described on this page.
+
+## Base URL
+
+Wraft exposes API v1 under the `/api/v1` path prefix. Use the URL that matches your deployment:
+
+| Deployment | Base URL |
+|---|---|
+| Cloud (Wraft-hosted) | `https://app.wraft.co/api/v1` |
+| Self-hosted (local dev) | `http://localhost:4000/api/v1` |
+
+All example requests in this documentation use the self-hosted base URL. Swap in `https://app.wraft.co` when targeting the cloud environment.
+
+## API Version
+
+The current API version is **v1**, shipped with Wraft application version **0.6.6**. The version identifier is embedded in every request path and will be incremented for breaking changes.
+
+## Content Type
+
+All requests that carry a body must include the `Content-Type: application/json` header. All successful and error responses are also returned as `application/json`.
+
+```http
+Content-Type: application/json
+Accept: application/json
+```
+
+## Interactive API Docs (OpenAPI / Swagger)
+
+Wraft ships a machine-readable OpenAPI specification and an interactive Swagger UI. Both are available on every running instance:
+
+| Resource | Path |
+|---|---|
+| Swagger UI (interactive) | `/spec/swaggerui` |
+| Raw OpenAPI JSON | `/spec/openapi` |
+
+<Tip>
+  The Swagger UI is the fastest way to explore all available endpoints, inspect request/response schemas, and execute test requests directly from your browser without writing any code.
+</Tip>
+
+## Authentication
+
+The API supports two parallel authentication mechanisms. Provide **one** of the following on every authenticated request:
+
+<CardGroup cols={2}>
+  <Card title="JWT Bearer Token" icon="key">
+    Sign in to receive a short-lived access token and a refresh token. Pass the access token in the `Authorization` header on every subsequent request. Best for user-facing applications and interactive sessions.
+  </Card>
+  <Card title="API Key" icon="server">
+    Generate a long-lived key tied to your organisation. Pass it in the `x-api-key` header. Best for server-to-server integrations and automated pipelines where interactive login is impractical.
+  </Card>
+</CardGroup>
+
+Full details, including sign-up, token refresh, Google SSO, and API key lifecycle management, are covered in the [Authentication guide](/api/authentication).
+
+## Pagination
+
+List endpoints return paginated results using the [Scrivener](https://github.com/drewolson/scrivener_ecto) library. Every paginated response body includes the following top-level fields:
+
+<ResponseField name="page_number" type="integer">
+  The current page being returned (1-based).
+</ResponseField>
+
+<ResponseField name="total_pages" type="integer">
+  Total number of pages available for this query.
+</ResponseField>
+
+<ResponseField name="total_entries" type="integer">
+  Total number of records matching the query across all pages.
+</ResponseField>
+
+<ResponseField name="page_size" type="integer">
+  Maximum number of records returned per page.
+</ResponseField>
+
+To navigate pages, pass the `page` query parameter:
+
+```http
+GET /api/v1/api_keys?page=2
+```
+
+A typical paginated response looks like this:
+
+```json
+{
+  "page_number": 2,
+  "total_pages": 5,
+  "total_entries": 47,
+  "page_size": 10,
+  "data": [...]
+}
+```
+
+## Sorting
+
+Most list endpoints accept sort parameters to control the order of results. Pass the field name to sort ascending, or append `_desc` to sort descending:
+
+```http
+GET /api/v1/contents?sort=inserted_at
+GET /api/v1/contents?sort=inserted_at_desc
+```
+
+Refer to individual endpoint documentation in the Swagger UI (at `http://localhost:4000/spec/swaggerui` on a self-hosted instance) for the list of sortable fields supported by each resource.
+
+## Rate Limiting
+
+Wraft uses an ETS-backed rate limiter (powered by the [Hammer](https://github.com/ExHammer/hammer) library) to protect the API from abuse. Rate limiting is applied at the sign-in endpoint and per API key.
+
+- **Sign-in rate limit:** A maximum of **5 failed login attempts** per IP address and email combination within a **15-minute window**. Subsequent attempts within that window are rejected with `429 Too Many Requests`.
+- **API key rate limit:** Each API key has a configurable `rate_limit` field (default **1000 requests per hour**). Requests that exceed this limit receive `429 Too Many Requests`.
+
+<Warning>
+  Automated scripts and integration pipelines should use API keys rather than user credentials. Set an appropriate `rate_limit` when creating API keys for high-volume use cases.
+</Warning>
+
+## HTTP Status Codes
+
+The API uses standard HTTP status codes. The table below lists the codes you will encounter most often:
+
+| Status Code | Name | Meaning |
+|---|---|---|
+| `200` | OK | The request succeeded and the response body contains the result. |
+| `201` | Created | A new resource was successfully created. |
+| `204` | No Content | The request succeeded; no response body is returned (e.g. after deletion). |
+| `400` | Bad Request | The request was malformed or missing required parameters. |
+| `401` | Unauthorized | No valid credentials were provided, or the token has expired. |
+| `403` | Forbidden | Valid credentials were provided, but the user lacks permission for this action. |
+| `404` | Not Found | The requested resource does not exist or is not accessible. |
+| `422` | Unprocessable Entity | The request was well-formed but contained semantic errors (e.g. validation failures). |
+| `429` | Too Many Requests | The rate limit has been exceeded. |
+| `500` | Internal Server Error | An unexpected error occurred on the server. |
+
+## Error Response Format
+
+All error responses follow a consistent JSON structure with an `errors` key at the top level. The value is either a plain string message or a map of field-level validation errors:
+
+<CodeGroup>
+```json String error
+{
+  "errors": "You are not authorized for this action.!"
+}
+```
+
+```json Validation error
+{
+  "errors": {
+    "email": ["has already been taken"],
+    "password": ["should be at least 8 character(s)"]
+  }
+}
+```
+
+```json Not found
+{
+  "errors": "The id does not exist..!"
+}
+```
+</CodeGroup>
+
+<Note>
+  Always check the top-level `errors` key in non-2xx responses. Treat a string value as a single human-readable message and a map value as a set of per-field validation failures.
+</Note>
+
+## Resource Groups
+
+The Wraft API is organised into the following resource groups. Each group maps to one or more controllers in the application:
+
+<CardGroup cols={2}>
+  <Card title="Users & Auth" icon="user">
+    Registration, sign-in, token management, password reset, and email verification.
+  </Card>
+  <Card title="Organisations" icon="building">
+    Create and manage organisations, invite members, switch between organisations.
+  </Card>
+  <Card title="Content Types" icon="file-code">
+    Define document templates with schemas, layouts, and associated flows.
+  </Card>
+  <Card title="Documents (Instances)" icon="file-lines">
+    Create, edit, approve, and export document instances through their lifecycle.
+  </Card>
+  <Card title="Layouts" icon="table-columns">
+    Manage page layout definitions used across content types.
+  </Card>
+  <Card title="Themes" icon="palette">
+    Configure visual styling themes applied to generated documents.
+  </Card>
+  <Card title="Flows" icon="arrow-right-arrow-left">
+    Define multi-step approval flows attached to content types.
+  </Card>
+  <Card title="Pipelines" icon="code-branch">
+    Automate bulk document generation with trigger-based pipelines.
+  </Card>
+  <Card title="Forms" icon="rectangle-list">
+    Build and manage data-collection forms that feed document generation.
+  </Card>
+  <Card title="Webhooks" icon="webhook">
+    Register webhook endpoints to receive real-time event notifications.
+  </Card>
+  <Card title="API Keys" icon="key">
+    Create and manage long-lived API keys for server-to-server access.
+  </Card>
+  <Card title="Roles" icon="shield-halved">
+    Assign and revoke roles controlling what users can do in an organisation.
+  </Card>
+</CardGroup>

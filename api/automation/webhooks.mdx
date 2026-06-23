@@ -1,0 +1,552 @@
+---
+title: "Webhooks API Reference for Event-Driven Integrations"
+sidebarTitle: "Webhooks"
+description: "Register HTTP endpoints to receive real-time Wraft event notifications, manage delivery logs, toggle webhook status, and retrieve performance statistics."
+---
+
+Webhooks allow external systems to receive real-time notifications when events occur inside Wraft. You register an HTTPS endpoint, subscribe to one or more event types, and Wraft will POST a signed JSON payload to your URL each time a matching event fires. Wraft tracks every delivery attempt in a structured log and automatically retries on failure up to the configured `retry_count`.
+
+<Note>
+  Creating, updating, testing, and toggling webhooks requires the `webhook:manage` permission. Listing and showing webhooks requires `webhook:show`. Deleting requires `webhook:delete`.
+</Note>
+
+---
+
+## Available Events
+
+The following event types can be subscribed to when creating or updating a webhook:
+
+| Event | Description |
+|---|---|
+| `document.created` | A new document instance was created. |
+| `document.sent` | A document was sent for signing or review. |
+| `document.completed` | All required signatures or approvals were collected. |
+| `document.cancelled` | A document was cancelled. |
+| `document.signed` | A document was signed by a participant. |
+| `document.rejected` | A document was rejected during review. |
+| `document.state_updated` | A document moved to a new flow state. |
+| `document.comment_added` | A comment was added to a document. |
+| `document.deleted` | A document was permanently deleted. |
+| `document.reminder_sent` | A signing reminder was dispatched. |
+| `pipeline.completed` | A pipeline finished execution successfully. |
+| `pipeline.failed` | A pipeline execution failed. |
+| `pipeline.partially_completed` | Some pipeline stages succeeded but others failed. |
+| `test` | Used when testing a webhook from the API or UI. |
+
+---
+
+## Webhook Payload Structure
+
+Every POST Wraft sends to your endpoint shares a common envelope:
+
+```json Sample Webhook Payload
+{
+  "event": "document.signed",
+  "organisation": "466f1fa1-9657-4166-b372-21e8135aeaf1",
+  "user": "Jane Smith",
+  "document_id": "a9cc343b-857e-4e8a-8262-fc7badaebdfs",
+  "timestamp": "2024-03-15T10:30:00Z",
+  "test": false,
+  "triggered_by": "user_action",
+  "webhook_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+For test payloads sent via the `/test` endpoint, `"test": true` is set and `triggered_by` is `"webhook_test"`.
+
+<Tip>
+  Validate incoming webhooks by checking the request against the `secret` you provided during creation. Wraft signs the payload body with HMAC-SHA256 using your secret and includes the signature in the `X-Wraft-Signature` header.
+</Tip>
+
+---
+
+## Webhook CRUD
+
+### Create a Webhook
+
+`POST /api/v1/webhooks`
+
+Registers a new webhook for the caller's organisation.
+
+**Required permission:** `webhook:manage`
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Unique display name for the webhook within the organisation.
+</ParamField>
+
+<ParamField body="url" type="string" required>
+  The HTTPS endpoint that will receive event payloads. Must be a valid HTTP or HTTPS URL.
+</ParamField>
+
+<ParamField body="events" type="array" required>
+  List of event type strings to subscribe to. Must contain at least one item. See [Available Events](#available-events) for valid values.
+</ParamField>
+
+<ParamField body="secret" type="string">
+  A secret string used to sign payloads with HMAC-SHA256. Strongly recommended.
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Whether the webhook is enabled on creation. Defaults to `true`.
+</ParamField>
+
+<ParamField body="headers" type="object">
+  Custom HTTP headers to include with every delivery. Example: `{"X-Api-Key": "my-key"}`.
+</ParamField>
+
+<ParamField body="retry_count" type="integer">
+  Number of delivery retries on failure. Must be a positive integer. Defaults to `3`.
+</ParamField>
+
+<ParamField body="timeout_seconds" type="integer">
+  Per-request timeout in seconds. Must be a positive integer. Defaults to `30`.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the created webhook.</ResponseField>
+<ResponseField name="name" type="string">Webhook name.</ResponseField>
+<ResponseField name="url" type="string">Target endpoint URL.</ResponseField>
+<ResponseField name="events" type="array">Subscribed event types.</ResponseField>
+<ResponseField name="is_active" type="boolean">Whether the webhook is currently active.</ResponseField>
+<ResponseField name="headers" type="object">Custom headers sent with each delivery.</ResponseField>
+<ResponseField name="retry_count" type="integer">Number of retry attempts.</ResponseField>
+<ResponseField name="timeout_seconds" type="integer">Request timeout in seconds.</ResponseField>
+<ResponseField name="last_triggered_at" type="string">ISO 8601 timestamp of the last delivery attempt.</ResponseField>
+<ResponseField name="last_response_status" type="integer">HTTP status code of the last delivery response.</ResponseField>
+<ResponseField name="failure_count" type="integer">Number of consecutive delivery failures.</ResponseField>
+<ResponseField name="creator" type="object">User who created the webhook (id, name, email).</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/webhooks \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Document Events Webhook",
+    "url": "https://api.example.com/webhooks/wraft",
+    "secret": "my-hmac-secret-key",
+    "events": ["document.created", "document.signed", "document.completed"],
+    "is_active": true,
+    "headers": { "X-Api-Key": "external-service-key" },
+    "retry_count": 3,
+    "timeout_seconds": 30
+  }'
+```
+
+```json Response
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Document Events Webhook",
+  "url": "https://api.example.com/webhooks/wraft",
+  "events": ["document.created", "document.signed", "document.completed"],
+  "is_active": true,
+  "headers": { "X-Api-Key": "external-service-key" },
+  "retry_count": 3,
+  "timeout_seconds": 30,
+  "last_triggered_at": null,
+  "last_response_status": null,
+  "failure_count": 0,
+  "creator": {
+    "id": "af2cf1c6-f342-4042-8425-6346e9fd6c44",
+    "name": "Jane Smith",
+    "email": "jane@example.com"
+  },
+  "inserted_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-15T10:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### List Webhooks
+
+`GET /api/v1/webhooks`
+
+Returns a paginated list of all webhooks in the caller's organisation.
+
+**Required permission:** `webhook:show`
+
+#### Query Parameters
+
+<ParamField query="page" type="integer">Page number. Defaults to `1`.</ParamField>
+<ParamField query="page_size" type="integer">Number of results per page. Defaults to `10`.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/webhooks?page=1&page_size=10" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "webhooks": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Document Events Webhook",
+      "url": "https://api.example.com/webhooks/wraft",
+      "events": ["document.created", "document.signed"],
+      "is_active": true,
+      "retry_count": 3,
+      "timeout_seconds": 30,
+      "failure_count": 0,
+      "inserted_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 1
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Webhook
+
+`GET /api/v1/webhooks/:id`
+
+Retrieves a single webhook with full detail including creator information.
+
+**Required permission:** `webhook:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update a Webhook
+
+`PUT /api/v1/webhooks/:id`
+
+Replaces the configuration of an existing webhook. Provide all required fields even if only changing one.
+
+**Required permission:** `webhook:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook to update.</ParamField>
+
+#### Request Body
+
+Same fields as [Create a Webhook](#create-a-webhook). `name`, `url`, and `events` are required.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Document Events Webhook",
+    "url": "https://api.example.com/webhooks/wraft-v2",
+    "events": ["document.created", "document.signed", "pipeline.completed"],
+    "retry_count": 5,
+    "timeout_seconds": 45
+  }'
+```
+</CodeGroup>
+
+---
+
+### Delete a Webhook
+
+`DELETE /api/v1/webhooks/:id`
+
+Permanently deletes a webhook and all its associated logs. Returns `204 No Content` on success.
+
+**Required permission:** `webhook:delete`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Toggle Webhook Status
+
+`PATCH /api/v1/webhooks/:id/toggle`
+
+Flips the `is_active` flag of a webhook. An active webhook becomes inactive and vice versa. No request body is required.
+
+**Required permission:** `webhook:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PATCH https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000/toggle \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Document Events Webhook",
+  "is_active": false,
+  "updated_at": "2024-01-15T11:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Send a Test Event
+
+`POST /api/v1/webhooks/:id/test`
+
+Sends a test delivery to the webhook's configured URL using the specified event type. Useful for verifying connectivity and payload handling before going live.
+
+**Required permission:** `webhook:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook to test.</ParamField>
+
+#### Request Body
+
+<ParamField body="event" type="string" required>
+  Event type to simulate. Defaults to `"test"` if omitted.
+</ParamField>
+
+<ParamField body="content" type="string">
+  Custom message to include in the test payload. Defaults to `"This is a test webhook message from WraftDoc"`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000/test \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "document.created",
+    "content": "Testing document creation event"
+  }'
+```
+
+```json Response
+{
+  "message": "Test webhook triggered successfully"
+}
+```
+</CodeGroup>
+
+---
+
+### List Available Event Types
+
+`GET /api/v1/webhooks/events`
+
+Returns the complete list of event type strings that can be subscribed to.
+
+**Required permission:** `webhook:show`
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/webhooks/events \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "events": [
+    "document.created",
+    "document.sent",
+    "document.completed",
+    "document.cancelled",
+    "document.signed",
+    "document.rejected",
+    "document.state_updated",
+    "document.comment_added",
+    "document.deleted",
+    "document.reminder_sent",
+    "pipeline.completed",
+    "pipeline.failed",
+    "pipeline.partially_completed",
+    "test"
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## Delivery Logs
+
+Wraft records every delivery attempt — successful or failed — as a structured log entry. Logs include full request and response details, execution timing, and retry information.
+
+### List All Webhook Logs
+
+`GET /api/v1/webhooks/logs`
+
+Returns paginated delivery logs across all webhooks in the organisation.
+
+**Required permission:** `webhook:show`
+
+#### Query Parameters
+
+<ParamField query="page" type="integer">Page number. Defaults to `1`.</ParamField>
+<ParamField query="page_size" type="integer">Results per page. Defaults to `10`.</ParamField>
+<ParamField query="webhook_id" type="string">Filter by a specific webhook UUID.</ParamField>
+<ParamField query="event" type="string">Filter by event type (e.g. `"document.signed"`).</ParamField>
+<ParamField query="success" type="string">Filter by success status. Pass `"true"` or `"false"`.</ParamField>
+<ParamField query="from_date" type="string">Filter logs from this date onwards (ISO 8601 format).</ParamField>
+<ParamField query="to_date" type="string">Filter logs up to this date (ISO 8601 format).</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/webhooks/logs?event=document.signed&success=true&page=1" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "logs": [
+    {
+      "id": "log-550e8400-e29b-41d4-a716-446655440001",
+      "event": "document.signed",
+      "url": "https://api.example.com/webhooks/wraft",
+      "http_method": "POST",
+      "response_status": 200,
+      "execution_time_ms": 245,
+      "success": true,
+      "attempt_number": 1,
+      "triggered_at": "2024-01-15T10:30:00Z",
+      "inserted_at": "2024-01-15T10:30:01Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 5,
+  "total_entries": 47
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Specific Log Entry
+
+`GET /api/v1/webhooks/logs/:log_id`
+
+Retrieves complete details for a single delivery log, including request headers, request body, response body, and error messages.
+
+**Required permission:** `webhook:show`
+
+#### Path Parameters
+
+<ParamField path="log_id" type="string" required>UUID of the webhook log entry.</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">Log entry UUID.</ResponseField>
+<ResponseField name="event" type="string">Event type that triggered the delivery.</ResponseField>
+<ResponseField name="url" type="string">Endpoint URL that received the payload.</ResponseField>
+<ResponseField name="http_method" type="string">HTTP method used (always `POST`).</ResponseField>
+<ResponseField name="request_headers" type="object">Headers included in the delivery request.</ResponseField>
+<ResponseField name="request_body" type="string">Serialized JSON payload that was sent.</ResponseField>
+<ResponseField name="response_status" type="integer">HTTP response status code received.</ResponseField>
+<ResponseField name="response_headers" type="object">Headers returned by your endpoint.</ResponseField>
+<ResponseField name="response_body" type="string">Body returned by your endpoint.</ResponseField>
+<ResponseField name="execution_time_ms" type="integer">Time taken for the request in milliseconds.</ResponseField>
+<ResponseField name="success" type="boolean">Whether the delivery was considered successful (2xx response).</ResponseField>
+<ResponseField name="error_message" type="string">Error description for failed deliveries.</ResponseField>
+<ResponseField name="attempt_number" type="integer">Which retry attempt this log represents.</ResponseField>
+<ResponseField name="triggered_at" type="string">When the event was triggered.</ResponseField>
+<ResponseField name="webhook" type="object">Summary of the parent webhook.</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/webhooks/logs/log-550e8400-e29b-41d4-a716-446655440001 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### List Logs for a Specific Webhook
+
+`GET /api/v1/webhooks/:id/logs`
+
+Returns paginated delivery logs scoped to a single webhook.
+
+**Required permission:** `webhook:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook.</ParamField>
+
+#### Query Parameters
+
+<ParamField query="page" type="integer">Page number. Defaults to `1`.</ParamField>
+<ParamField query="page_size" type="integer">Results per page. Defaults to `10`.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000/logs?page=1" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Get Webhook Statistics
+
+`GET /api/v1/webhooks/:id/stats`
+
+Returns delivery performance statistics for the specified webhook over the most recent 30-day period.
+
+**Required permission:** `webhook:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the webhook.</ParamField>
+
+#### Response Fields
+
+<ResponseField name="total_requests" type="integer">Total delivery attempts in the period.</ResponseField>
+<ResponseField name="successful_requests" type="integer">Number of deliveries that received a 2xx response.</ResponseField>
+<ResponseField name="failed_requests" type="integer">Number of deliveries that failed or timed out.</ResponseField>
+<ResponseField name="success_rate" type="number">Success percentage (0–100).</ResponseField>
+<ResponseField name="average_response_time_ms" type="number">Mean response time across all deliveries.</ResponseField>
+<ResponseField name="period_days" type="integer">Number of days covered by these statistics.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/webhooks/550e8400-e29b-41d4-a716-446655440000/stats \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "total_requests": 150,
+  "successful_requests": 145,
+  "failed_requests": 5,
+  "success_rate": 96.67,
+  "average_response_time_ms": 245.5,
+  "period_days": 30
+}
+```
+</CodeGroup>

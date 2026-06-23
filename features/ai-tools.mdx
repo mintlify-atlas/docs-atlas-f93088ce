@@ -1,0 +1,231 @@
+---
+title: "AI Tools: Extraction, Suggestion, and Refinement Agents"
+sidebarTitle: "AI Tools"
+description: "Run AI agents on document content to extract structured data, generate suggestions, or refine language quality using configurable LLM models and prompts."
+---
+
+Wraft includes three built-in AI agents for document processing: **Extraction**, **Suggestion**, and **Refinement**. Each agent accepts your document content and a prompt, sends them to a configured LLM via the `jido` and `jido_ai` libraries, and returns structured or improved content. You choose which model to use and can define reusable prompt templates for consistent results across your organisation.
+
+## Agent Types
+
+<CardGroup cols={3}>
+  <Card title="Extraction" icon="magnifying-glass">
+    Converts markdown document text into structured data — extracting entities, dates, financial figures, and other typed fields based on your prompt instructions.
+  </Card>
+  <Card title="Suggestion" icon="lightbulb">
+    Analyses your document content and returns a list of actionable suggestions for improving clarity, completeness, or compliance with your standards.
+  </Card>
+  <Card title="Refinement" icon="wand-magic-sparkles">
+    Rewrites or enhances your document content based on a prompt, improving prose quality, legal language precision, or tone — while preserving the original meaning.
+  </Card>
+</CardGroup>
+
+Each agent type is backed by a dedicated Jido Action module:
+
+| Agent | Module | Response Model |
+|---|---|---|
+| `extraction` | `WraftDoc.AiAgents.Tools.DocExtraction` | `Extraction` (entities, dates, financial details) |
+| `suggestion` | `WraftDoc.AiAgents.Tools.DocSuggestion` | `Suggestions` (array of suggestion objects) |
+| `refinement` | `WraftDoc.AiAgents.Tools.DocRefinement` | `Refinement` (refined content string) |
+
+## Executing an AI Tool
+
+`POST /api/v1/ai_tools`
+
+Provide document `content` and either a saved `prompt_id` or an inline `prompt` with a `prompt_type`. An optional `model_id` selects a specific configured model; if omitted, the organisation's default model is used.
+
+<CodeGroup>
+
+```bash Using a saved prompt
+curl -X POST https://api.wraft.com/api/v1/ai_tools \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "This Agreement is entered into as of January 1, 2025 between Acme Corp...",
+    "prompt_id": "prompt-uuid-here",
+    "model_id": "model-uuid-here"
+  }'
+```
+
+```bash Using an inline prompt
+curl -X POST https://api.wraft.com/api/v1/ai_tools \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "This Agreement is entered into as of January 1, 2025 between Acme Corp...",
+    "prompt": "Extract all party names, effective dates, and payment amounts from this contract.",
+    "prompt_type": "extraction",
+    "model_id": "model-uuid-here"
+  }'
+```
+
+```json Extraction response
+{
+  "result": {
+    "entities": ["Acme Corp", "Widget Ltd"],
+    "dates": ["January 1, 2025"],
+    "financial_details": []
+  }
+}
+```
+
+```json Suggestion response
+{
+  "result": {
+    "suggestions": [
+      "Consider adding a governing law clause in Section 5.",
+      "The indemnification clause in Section 8 is ambiguous — specify the cap on liability."
+    ]
+  }
+}
+```
+
+</CodeGroup>
+
+<ParamField body="content" type="string" required>
+  The document text (markdown) to process. This is the content the AI agent will analyse or transform.
+</ParamField>
+
+<ParamField body="prompt_id" type="string">
+  UUID of a saved Prompt record. If provided, `prompt` and `prompt_type` are ignored.
+</ParamField>
+
+<ParamField body="prompt" type="string">
+  An inline prompt string. Requires `prompt_type` to be set when used.
+</ParamField>
+
+<ParamField body="prompt_type" type="string">
+  The agent type for the inline prompt. Must be one of `"extraction"`, `"suggestion"`, or `"refinement"`.
+</ParamField>
+
+<ParamField body="model_id" type="string">
+  UUID of the AI Model to use. If omitted, Wraft uses the organisation's default model.
+</ParamField>
+
+## AI Models
+
+AI Models define which LLM provider and model to call, along with authentication credentials and optional rate limits.
+
+```bash cURL
+# Create a model
+curl -X POST https://api.wraft.com/api/v1/models \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GPT-4o Production",
+    "description": "OpenAI GPT-4o for document processing",
+    "provider": "openai",
+    "model_name": "gpt-4o",
+    "model_type": "chat",
+    "model_version": "2024-08-06",
+    "auth_key": "sk-...",
+    "endpoint_url": "https://api.openai.com",
+    "status": "active",
+    "is_default": true,
+    "is_local": false,
+    "is_thinking_model": false,
+    "daily_request_limit": 1000,
+    "daily_token_limit": 500000
+  }'
+```
+
+| Field | Description |
+|---|---|
+| `provider` | LLM provider identifier passed to `Jido.AI.Model.from/1` (e.g., `"openai"`, `"anthropic"`) |
+| `model_name` | The provider's model identifier (e.g., `"gpt-4o"`, `"claude-3-5-sonnet"`) |
+| `auth_key` | API key for the provider — stored encrypted at rest |
+| `endpoint_url` | Optional custom base URL, used for local or self-hosted models |
+| `is_default` | If `true`, this model is used when no `model_id` is specified. Only one default per organisation is allowed. |
+| `daily_request_limit` | Maximum API calls per day |
+| `daily_token_limit` | Maximum tokens consumed per day |
+
+<Note>
+  Wraft automatically selects the default model when `model_id` is not supplied in the request. The first model created in an organisation is set as the default automatically.
+</Note>
+
+## AI Prompts
+
+Prompts are reusable template instructions stored in your organisation. Each Prompt has a `type` that matches one of the three agent types, ensuring the correct agent module is invoked.
+
+```bash cURL
+# Create a prompt
+curl -X POST https://api.wraft.com/api/v1/prompts \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Contract Key Date Extractor",
+    "prompt": "Extract all dates mentioned in this contract. For each date, provide the date value and its context (what event or obligation it relates to). Return results as structured data.",
+    "type": "extraction",
+    "status": "active"
+  }'
+
+# List prompts
+GET /api/v1/prompts
+
+# Get a specific prompt
+GET /api/v1/prompts/:id
+```
+
+<Warning>
+  System prompts (those with no `organisation_id` and no `creator_id`) cannot be deleted. These are built-in defaults provided by Wraft.
+</Warning>
+
+## Use Cases
+
+<Tabs>
+  <Tab title="Extract key dates">
+    Run an extraction agent on a contract to pull out effective dates, expiry dates, and payment deadlines into a structured format for your records system.
+
+    ```json Request
+    {
+      "content": "## Service Agreement\n\nEffective Date: March 1, 2025\nExpiry: February 28, 2026\nPayment due: 30 days after invoice...",
+      "prompt_type": "extraction",
+      "prompt": "Extract all dates and their associated obligations from this contract."
+    }
+    ```
+  </Tab>
+  <Tab title="Improve document clarity">
+    Run a suggestion agent on a draft policy document to receive specific, actionable recommendations before finalising.
+
+    ```json Request
+    {
+      "content": "Employees should maybe try to follow the security policy when possible...",
+      "prompt_type": "suggestion",
+      "prompt": "Review this policy document and suggest improvements for clarity, precision, and compliance tone."
+    }
+    ```
+  </Tab>
+  <Tab title="Refine legal language">
+    Run a refinement agent to strengthen the professional or legal tone of a document section.
+
+    ```json Request
+    {
+      "content": "If you break this agreement, you'll have to pay us back for anything we lose.",
+      "prompt_type": "refinement",
+      "prompt": "Rewrite this clause using formal legal language appropriate for a commercial contract governed by English law."
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## How It Works
+
+Internally, each AI tool execution follows this flow:
+
+<Steps>
+  <Step title="Validate parameters">
+    Wraft validates that `content` is non-empty and that either `prompt_id` or a `prompt` + `prompt_type` pair is provided.
+  </Step>
+  <Step title="Resolve model and prompt">
+    The specified model (or organisation default) and prompt are fetched from the database. For inline prompts, a transient prompt map is constructed with the given `prompt_type`.
+  </Step>
+  <Step title="Build the Jido prompt">
+    A `Jido.AI.Prompt` is constructed with a system message (`"You are an expert document summarizer and converter."`) and a user message combining the prompt text with the document content.
+  </Step>
+  <Step title="Call the LLM">
+    `Jido.AI.Actions.Instructor` executes the prompt against the configured model in `json_schema` mode, using the agent's response model schema (e.g., `Extraction`, `Suggestions`, or `Refinement`) to enforce structured output. Up to 2 retries are attempted on failure.
+  </Step>
+  <Step title="Log and return">
+    A `ModelLog` entry records the model name, provider, prompt text, endpoint, status, and response time in milliseconds. The structured result is returned to the caller.
+  </Step>
+</Steps>

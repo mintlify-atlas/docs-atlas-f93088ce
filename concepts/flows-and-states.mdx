@@ -1,0 +1,263 @@
+---
+title: "Flows and States: Document Approval Lifecycle in Wraft"
+sidebarTitle: "Flows & States"
+description: "Learn how Wraft Flows and States define the review and approval lifecycle that every document instance passes through before it is finalised."
+---
+
+Wraft's approval model is built around **Flows** and **States**. A Flow is a named, ordered sequence of States that every document created under a Content Type must traverse. States define who can review a document at each stage, and the document advances or retreats through them as approvers act. This gives teams fine-grained control over document review, sign-off, and archival — without writing any custom automation.
+
+## What Is a Flow?
+
+A Flow is an organisation-scoped named sequence of States. It has a `name`, an optional `controlled` flag (for programmatically driven flows with `control_data`), and carries many States ordered by an integer `order` field.
+
+Every Content Type references exactly one Flow. When a document instance is created under that Content Type, it enters the Flow with no state (`state: nil`) and begins awaiting its first approval action before entering the initial state.
+
+<Note>
+  Flow names must be unique within an organisation. You cannot create two Flows with the same name.
+</Note>
+
+## What Is a State?
+
+A State is one step within a Flow. It has:
+
+| Field | Description |
+|---|---|
+| `state` | Human-readable name, e.g. `"Draft"`, `"Legal Review"`, `"Signed"` |
+| `order` | Integer position within the Flow; states are sorted ascending by order |
+| `type` | One of `:reviewer`, `:editor`, or `:sign` — indicates the kind of action expected at this stage |
+| `approvers` | A list of users (via the `state_users` join table) who are authorised to approve documents in this state |
+
+States are unique per Flow — you cannot have two states with the same name or the same `order` value within a single Flow.
+
+## Example: A Document Approval Flow
+
+The following example shows a five-state flow for a legal contract:
+
+<Steps>
+  <Step title="Draft (order: 1)">
+    The document author writes and edits the contract. Assigned users with the `:editor` type can modify content. No approver action is required to enter this state; the first approval action from nil moves the document here.
+  </Step>
+  <Step title="Review (order: 2)">
+    A team lead or content reviewer checks the document for accuracy and completeness. An approver assigned to this state approves the document to advance it, or rejects it to send it back to Draft.
+  </Step>
+  <Step title="Legal Approval (order: 3)">
+    The legal team reviews the contract for compliance. Only users assigned as approvers for this state can advance or reject the document. Multiple legal reviewers can be added; any one of them can act.
+  </Step>
+  <Step title="Signed (order: 4)">
+    The document is ready for signatures. This state uses the `:sign` type, optionally triggering the digital signature workflow. Once signed, the approver advances the document.
+  </Step>
+  <Step title="Archived (order: 5)">
+    The final state. When a document reaches this state and is approved, `approval_status` is set to `true` and the document is considered complete. It can be locked to prevent further edits.
+  </Step>
+</Steps>
+
+## State Transitions
+
+State transitions happen in two ways:
+
+**Manual transition via state ID** — An authorised user explicitly selects a target state:
+
+```http
+PATCH /api/v1/contents/:id/states
+Content-Type: application/json
+
+{ "state_id": "9d4e3c2b-a1b2-..." }
+```
+
+**Approval-driven transition** — An approver approves or rejects, and Wraft automatically advances to the next state (approval) or retreats to the previous state (rejection):
+
+```http
+POST /api/v1/contents/:id/approve
+POST /api/v1/contents/:id/reject
+```
+
+Every transition is recorded in an `InstanceTransitionLog` with the reviewer ID, review status (`approved`/`rejected`), timestamp, and the from/to state IDs. Approvers in the new state receive a notification.
+
+## Creating a Flow
+
+<CodeGroup>
+
+```http Create Flow
+POST /api/v1/flows
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json Request body
+{
+  "name": "Legal Contract Approval"
+}
+```
+
+```json Response
+{
+  "id": "a1b2c3d4-...",
+  "name": "Legal Contract Approval",
+  "controlled": false,
+  "creator": { "id": "...", "name": "Alice Admin" }
+}
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string" required>
+  Display name for the Flow. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="controlled" type="boolean">
+  Set to `true` for programmatically-controlled flows that use `control_data` instead of manual approvals.
+</ParamField>
+
+## Adding States to a Flow
+
+After creating a Flow, add States to it. Each state requires an `order` integer and a `state` name:
+
+<CodeGroup>
+
+```http Create State
+POST /api/v1/flows/:flow_id/states
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json Request body
+{
+  "state": "Legal Review",
+  "order": 3,
+  "type": "reviewer"
+}
+```
+
+```json Response
+{
+  "id": "b2c3d4e5-...",
+  "state": "Legal Review",
+  "order": 3,
+  "type": "reviewer",
+  "approvers": []
+}
+```
+
+</CodeGroup>
+
+<ParamField body="state" type="string" required>
+  The display name for this state step.
+</ParamField>
+
+<ParamField body="order" type="integer" required>
+  Integer position within the Flow. States are processed in ascending order. Must be unique within the Flow.
+</ParamField>
+
+<ParamField body="type" type="string">
+  State type: `reviewer`, `editor`, or `sign`. Defaults to `editor`.
+</ParamField>
+
+## Assigning Approvers to a State
+
+Users must be assigned to a State to have the authority to approve documents at that step. Assignments are made at the document level (allowing per-document customisation of approvers):
+
+```http
+POST /api/v1/states/:state_id/users/:user_id?document_id=<content_id>
+```
+
+To remove a user from a state:
+
+```http
+DELETE /api/v1/states/:state_id/users/:user_id?document_id=<content_id>
+```
+
+To list all users currently assigned to a state for a given document:
+
+```http
+GET /api/v1/states/:state_id/users?document_id=<content_id>
+```
+
+<Note>
+  The user must be a member of your organisation (`UserOrganisation` record must exist) before they can be added as a state approver.
+</Note>
+
+## Reordering States
+
+To change the order of states within a flow, use the align-states endpoint. Pass the full ordered list of state IDs as the new sequence:
+
+```http
+PUT /api/v1/flows/:id/align-states
+Content-Type: application/json
+
+{
+  "states": [
+    { "id": "state-uuid-1", "order": 1 },
+    { "id": "state-uuid-2", "order": 2 },
+    { "id": "state-uuid-3", "order": 3 }
+  ]
+}
+```
+
+Wraft updates all `order` values atomically. This is the only safe way to reorder states, as the `order` field has a uniqueness constraint per flow.
+
+## Flow Management API
+
+<CodeGroup>
+
+```http List Flows
+GET /api/v1/flows?page=1&name=legal&sort=inserted_at_desc
+```
+
+```http Show Flow
+GET /api/v1/flows/:id
+```
+
+```http Update Flow
+PUT /api/v1/flows/:id
+Content-Type: application/json
+
+{ "name": "Updated Flow Name" }
+```
+
+```http Delete Flow
+DELETE /api/v1/flows/:id
+```
+
+</CodeGroup>
+
+<Warning>
+  You cannot delete a Flow that is referenced by any Content Type. Reassign all Content Types to a different Flow before deleting.
+</Warning>
+
+## Approval Systems
+
+On top of state-based transitions, Wraft supports an additional **Approval Systems** layer. Approval Systems are independent approval checkpoints associated with a Flow that can run in parallel with or in addition to state transitions. When a document instance is created, Wraft automatically creates `InstanceApprovalSystem` records for each Approval System attached to the Flow.
+
+Unlike state transitions (which are sequential by order), Approval Systems allow specific named approvers to explicitly sign off without necessarily changing the document's current state. This enables scenarios like "legal must sign off AND finance must sign off before the document can advance" within a single state.
+
+```http
+GET /api/v1/contents/:id/approval_systems
+```
+
+## State Index for a Flow
+
+To retrieve all states under a specific flow:
+
+```http
+GET /api/v1/flows/:flow_id/states
+```
+
+Returns a list of states ordered by their `order` field, each including their assigned approvers.
+
+## Pending Approvals
+
+Users can see all documents that are waiting for their review action:
+
+```http
+GET /api/v1/contents/pending_approvals
+```
+
+This returns paginated instances where:
+- `approval_status` is `false` (not yet fully approved)
+- The current user is assigned as an approver for the document's current state
+
+Each result includes the `next_state` and `previous_state` names so the reviewer knows what approving or rejecting will do.
+
+<Tip>
+  Use the `name` query parameter on the pending approvals endpoint to filter by document title: `GET /api/v1/contents/pending_approvals?name=employment`.
+</Tip>

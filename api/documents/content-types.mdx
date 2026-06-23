@@ -1,0 +1,421 @@
+---
+title: "Content Types API: Define Document Templates in Wraft"
+sidebarTitle: "Content Types"
+description: "Manage content type templates — create, list, search, update, and delete document blueprints that link layouts, flows, themes, and custom field definitions."
+---
+
+A content type is the master blueprint for a class of documents in Wraft. It binds together a layout (the page template), a flow (the approval workflow), and a theme (typography and colours), then defines the custom fields that authors fill in when creating document instances. Every document instance in Wraft is created from a content type.
+
+<Note>
+  Content type operations require the `variant` permission group. Creating and updating requires `variant:manage`; listing and showing requires `variant:show`; deleting requires `variant:delete`.
+</Note>
+
+---
+
+## Create a content type
+
+`POST /api/v1/content_types`
+
+Creates a new content type for the authenticated user's organisation. The `layout_id`, `flow_id`, and `theme_id` must all belong to the same organisation. A `prefix` is required and is used to generate sequential human-readable IDs for document instances (e.g. a prefix of `OFFLET` produces `OFFLET01`, `OFFLET02`, …).
+
+**Required permission:** `variant:manage`
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  Display name for the content type. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Human-readable description of what this content type is used for.
+</ParamField>
+
+<ParamField body="prefix" type="string" required>
+  2–6 character alphanumeric prefix used to generate document instance IDs (e.g. `OFFLET`, `NDA`, `PO`).
+</ParamField>
+
+<ParamField body="layout_id" type="string" required>
+  UUID of the layout to use for rendering documents of this type.
+</ParamField>
+
+<ParamField body="flow_id" type="string" required>
+  UUID of the approval flow that governs document lifecycle.
+</ParamField>
+
+<ParamField body="theme_id" type="string" required>
+  UUID of the theme that controls fonts and colours during rendering.
+</ParamField>
+
+<ParamField body="type" type="string">
+  Document category: `document` (default) or `contract`. Affects analytics and filtering.
+</ParamField>
+
+<ParamField body="color" type="string">
+  Hex colour code used to visually identify this content type in the UI (e.g. `#3B82F6`). Must match `#RRGGBB` or `#RGB` format.
+</ParamField>
+
+<ParamField body="fields" type="array">
+  Array of field definitions to attach to this content type.
+  <Expandable title="field object">
+    <ParamField body="name" type="string" required>Field label shown to document authors.</ParamField>
+    <ParamField body="field_type_id" type="string" required>UUID of the field type (text, date, number, etc.).</ParamField>
+    <ParamField body="description" type="string">Optional field hint or tooltip text.</ParamField>
+    <ParamField body="meta" type="object">Field-type-specific configuration, e.g. `{"src": "/img/logo.png", "alt": "Logo"}` for image fields.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="frame_mapping" type="object">
+  Mapping between content type fields and the layout's frame placeholders.
+  <Expandable title="frame_mapping structure">
+    <ParamField body="mapping" type="array">
+      Array of source → destination pairs: `[{"source": "name", "destination": "Full Name"}]`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/content_types \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Offer Letter",
+    "description": "Standard employment offer letter template",
+    "prefix": "OFFLET",
+    "type": "document",
+    "layout_id": "layout-uuid-here",
+    "flow_id": "flow-uuid-here",
+    "theme_id": "theme-uuid-here",
+    "color": "#3B82F6",
+    "fields": [
+      {
+        "name": "Candidate Name",
+        "field_type_id": "ft-text-uuid",
+        "description": "Full legal name of the candidate"
+      },
+      {
+        "name": "Start Date",
+        "field_type_id": "ft-date-uuid",
+        "description": "Proposed start date"
+      }
+    ],
+    "frame_mapping": {
+      "mapping": [
+        { "source": "Candidate Name", "destination": "Title" },
+        { "source": "Start Date", "destination": "SubTitle" }
+      ]
+    }
+  }'
+```
+
+```json Response
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "name": "Offer Letter",
+  "description": "Standard employment offer letter template",
+  "prefix": "OFFLET",
+  "type": "document",
+  "color": "#3B82F6",
+  "fields": [
+    {
+      "id": "ctf-uuid-1",
+      "name": "Candidate Name",
+      "machine_name": "candidate_name",
+      "order": 1,
+      "required": false,
+      "field_type": { "id": "ft-text-uuid", "name": "Text", "type": "text" }
+    }
+  ],
+  "layout": { "id": "layout-uuid-here", "name": "Standard Layout" },
+  "flow": { "id": "flow-uuid-here", "name": "HR Approval Flow" },
+  "theme": { "id": "theme-uuid-here", "name": "Corporate Theme" },
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="id" type="string">UUID of the newly created content type.</ResponseField>
+<ResponseField name="name" type="string">Content type name.</ResponseField>
+<ResponseField name="description" type="string">Description.</ResponseField>
+<ResponseField name="prefix" type="string">Instance ID prefix (2–6 characters).</ResponseField>
+<ResponseField name="type" type="string">`document` or `contract`.</ResponseField>
+<ResponseField name="color" type="string">Hex colour code.</ResponseField>
+<ResponseField name="fields" type="array">
+  <Expandable title="field object">
+    <ResponseField name="id" type="string">UUID of the content type field record.</ResponseField>
+    <ResponseField name="name" type="string">Display label.</ResponseField>
+    <ResponseField name="machine_name" type="string">Slug-style key used in `serialized` maps.</ResponseField>
+    <ResponseField name="order" type="integer">Display order in the editor form.</ResponseField>
+    <ResponseField name="required" type="boolean">Whether the field must be filled before saving.</ResponseField>
+    <ResponseField name="meta" type="object">Field-type-specific configuration object.</ResponseField>
+    <ResponseField name="validations" type="array">Array of validation rule objects.</ResponseField>
+    <ResponseField name="field_type" type="object">Nested field type descriptor: `id`, `name`, `type`, `icon`.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="layout" type="object">Associated layout summary.</ResponseField>
+<ResponseField name="flow" type="object">Associated flow summary (may include states).</ResponseField>
+<ResponseField name="theme" type="object">Associated theme summary.</ResponseField>
+
+---
+
+## List content types
+
+`GET /api/v1/content_types`
+
+Returns a paginated list of all content types in the authenticated user's organisation. Supports filtering by name and prefix.
+
+**Required permission:** `variant:show`
+
+### Query parameters
+
+<ParamField query="page" type="string">Page number (default: `1`).</ParamField>
+
+<ParamField query="name" type="string">
+  Filter results by content type name (case-insensitive substring match).
+</ParamField>
+
+<ParamField query="prefix" type="string">
+  Filter results by prefix (exact match).
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types?page=1&sort=name&name=offer" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "content_types": [
+    {
+      "id": "3fa85f64-...",
+      "name": "Offer Letter",
+      "description": "Standard employment offer letter",
+      "prefix": "OFFLET",
+      "color": "#3B82F6",
+      "type": "document",
+      "layout": { "id": "l1", "name": "Standard Layout" },
+      "flow": { "id": "f1", "name": "HR Flow" },
+      "theme": { "id": "t1", "name": "Corporate Theme" },
+      "creator": { "id": "u1", "name": "Bob Smith" },
+      "inserted_at": "2024-06-01T10:00:00Z",
+      "updated_at": "2024-06-01T10:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 2,
+  "total_entries": 12
+}
+```
+</CodeGroup>
+
+---
+
+## Show a content type
+
+`GET /api/v1/content_types/:id`
+
+Returns the full details of a single content type, including all fields, the associated layout, flow (with states), theme, and creator info.
+
+**Required permission:** `variant:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the content type.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "content_type": {
+    "id": "3fa85f64-...",
+    "name": "Offer Letter",
+    "description": "Standard employment offer letter",
+    "prefix": "OFFLET",
+    "color": "#3B82F6",
+    "fields": [ { "id": "ctf-1", "name": "Candidate Name", "machine_name": "candidate_name" } ],
+    "layout": { "id": "l1", "name": "Standard Layout", "engine": { "name": "Typst" } },
+    "flow": { "id": "f1", "name": "HR Flow", "states": [ { "state": "draft", "order": 1 } ] },
+    "theme": { "id": "t1", "name": "Corporate Theme", "font": "Roboto" }
+  },
+  "creator": { "id": "u1", "name": "Bob Smith", "email": "bob@example.com" }
+}
+```
+</CodeGroup>
+
+---
+
+## Update a content type
+
+`PUT /api/v1/content_types/:id`
+
+Updates an existing content type. The `layout_id` is required in the request body. The Typesense index entry is refreshed automatically.
+
+**Required permission:** `variant:manage`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the content type to update.</ParamField>
+
+### Request body
+
+Accepts the same fields as the create endpoint. `name`, `description`, `layout_id`, `flow_id`, `prefix`, and `theme_id` are required on update.
+
+<CodeGroup>
+```bash cURL
+curl -s -X PUT https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Offer Letter v2",
+    "description": "Updated offer letter template with enhanced fields",
+    "prefix": "OFFLET",
+    "layout_id": "new-layout-uuid",
+    "flow_id": "flow-uuid-here",
+    "theme_id": "theme-uuid-here"
+  }'
+```
+</CodeGroup>
+
+---
+
+## Delete a content type
+
+`DELETE /api/v1/content_types/:id`
+
+Permanently deletes a content type. The record is removed from Typesense. This operation will fail if there are existing document instances referencing this content type.
+
+**Required permission:** `variant:delete`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the content type to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X DELETE https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Search content types by name
+
+`GET /api/v1/content_types/title/search`
+
+Searches content types by name using a full-text query. Powered by the Typesense search index.
+
+**Required permission:** `variant:show`
+
+### Query parameters
+
+<ParamField query="key" type="string" required>
+  Search query string matched against content type names.
+</ParamField>
+
+<ParamField query="page" type="string">Page number.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types/title/search?key=offer" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Bulk build documents
+
+`POST /api/v1/content_types/:c_type_id/bulk_build`
+
+Enqueues an asynchronous job to create multiple document instances from a CSV file. Each row in the CSV is mapped to the content type's fields via the `mapping` parameter and a new instance is created for each row using the specified data template and initial state.
+
+**Required permission:** `variant:manage`
+
+### Path parameters
+
+<ParamField path="c_type_id" type="string" required>UUID of the content type to bulk-build under.</ParamField>
+
+### Request body (`multipart/form-data`)
+
+<ParamField body="file" type="file" required>
+  CSV source file. Each row represents one document instance.
+</ParamField>
+
+<ParamField body="state_id" type="string" required>
+  UUID of the initial workflow state to assign to each created instance.
+</ParamField>
+
+<ParamField body="d_temp_id" type="string" required>
+  UUID of the data template to use as the base content for each instance.
+</ParamField>
+
+<ParamField body="mapping" type="object" required>
+  JSON object mapping CSV column headers to content type field `machine_name` values. Example: `{"Column A": "candidate_name", "Column B": "start_date"}`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s -X POST https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/bulk_build \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@candidates.csv" \
+  -F "state_id=s1-uuid" \
+  -F "d_temp_id=dt1-uuid" \
+  -F 'mapping={"Name":"candidate_name","Start":"start_date"}'
+```
+
+```json Response
+{
+  "info": "Bulk build job has been queued and will be processed shortly."
+}
+```
+</CodeGroup>
+
+<Tip>
+  The bulk build job is processed by an Oban background worker. Poll the instance list endpoint for the content type to monitor progress as instances are created.
+</Tip>
+
+---
+
+## Show roles for a content type
+
+`GET /api/v1/content_types/:id/roles`
+
+Returns the roles (and their associated permissions) that are linked to the specified content type. Used to determine which organisation roles can access or manage documents of this type.
+
+**Required permission:** `variant:show`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>UUID of the content type.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -s "https://api.wraft.com/api/v1/content_types/3fa85f64-5717-4562-b3fc-2c963f66afa6/roles" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "3fa85f64-...",
+  "name": "Offer Letter",
+  "description": "Standard employment offer letter",
+  "color": "#3B82F6",
+  "prefix": "OFFLET",
+  "inserted_at": "2024-06-01T10:00:00Z",
+  "updated_at": "2024-06-01T10:00:00Z"
+}
+```
+</CodeGroup>

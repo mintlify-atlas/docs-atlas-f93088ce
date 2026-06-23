@@ -1,0 +1,564 @@
+---
+title: "Pipelines and Pipeline Stages API Reference"
+sidebarTitle: "Pipelines"
+description: "Create and manage automation pipelines that connect WraftForms to document generation stages, with full CRUD access and trigger history tracking."
+---
+
+Pipelines are the backbone of Wraft's document automation. A pipeline links a source — typically a WraftForm — to one or more **pipe stages**, where each stage maps a content type and data template to produce a document. When a form entry is submitted, Wraft routes the data through every stage in the pipeline, generating documents automatically. Trigger histories record every execution for auditing and debugging.
+
+<Note>
+  All pipeline endpoints require a valid `Authorization: Bearer <token>` header. Creating, updating, and deleting pipelines additionally requires the `pipeline:manage` or `pipeline:delete` permission on the caller's role.
+</Note>
+
+---
+
+## Pipelines
+
+### Create a Pipeline
+
+<br />
+
+`POST /api/v1/pipelines`
+
+Creates a new pipeline scoped to the caller's current organisation. On success, Wraft also registers the pipeline with the configured Typesense search index and creates the `FormPipeline` association to the source form.
+
+**Required permission:** `pipeline:manage`
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Human-readable name for the pipeline. Must be unique within the organisation.
+</ParamField>
+
+<ParamField body="source" type="string" required>
+  Source type for the pipeline. Use `"WraftForms"` to connect to a Wraft form.
+</ParamField>
+
+<ParamField body="source_id" type="string" required>
+  UUID of the source resource. When `source` is `"WraftForms"`, this is the form's UUID.
+</ParamField>
+
+<ParamField body="api_route" type="string" required>
+  The API route or CRM endpoint that will receive pipeline output — e.g. `"client.crm.com"`.
+</ParamField>
+
+<ParamField body="stages" type="array">
+  Optional list of pipe stage definitions to create inline. Each item requires `content_type_id` and `data_template_id`.
+
+  <Expandable title="Stage item fields">
+    <ParamField body="content_type_id" type="string" required>
+      UUID of the content type to use for document generation.
+    </ParamField>
+    <ParamField body="data_template_id" type="string" required>
+      UUID of the data template to apply when building the document.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the created pipeline.</ResponseField>
+<ResponseField name="name" type="string">Pipeline name.</ResponseField>
+<ResponseField name="source" type="string">Source type, e.g. `"WraftForms"`.</ResponseField>
+<ResponseField name="source_id" type="string">UUID of the linked source form.</ResponseField>
+<ResponseField name="api_route" type="string">CRM or downstream API route.</ResponseField>
+<ResponseField name="stages" type="array">
+  List of pipeline stages created alongside this pipeline.
+  <Expandable title="Stage fields">
+    <ResponseField name="id" type="string">Stage UUID.</ResponseField>
+    <ResponseField name="content_type" type="object">Content type details (id, name, prefix, color).</ResponseField>
+    <ResponseField name="data_template" type="object">Data template details (id, title, title_template, data).</ResponseField>
+    <ResponseField name="state" type="object">Flow state details (id, state, order).</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/pipelines \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Employee Offer Pipeline",
+    "source": "WraftForms",
+    "source_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "api_route": "client.crm.com",
+    "stages": [
+      {
+        "content_type_id": "12lkjn3490u12",
+        "data_template_id": "23e40p9lknsd478"
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "1232148nb3478",
+  "name": "Employee Offer Pipeline",
+  "source": "WraftForms",
+  "source_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "api_route": "client.crm.com",
+  "inserted_at": "2024-02-21T14:00:00Z",
+  "updated_at": "2024-02-21T14:00:00Z",
+  "stages": [
+    {
+      "id": "kjasfqjbn",
+      "content_type": {
+        "id": "12lkjn3490u12",
+        "name": "Offer Letter",
+        "prefix": "OFFLET",
+        "color": "#ffffff"
+      },
+      "data_template": {
+        "id": "23e40p9lknsd478",
+        "title": "Standard Offer",
+        "title_template": "Offer for [name]",
+        "data": "Dear [name], ..."
+      },
+      "state": { "id": "state123", "state": "Draft", "order": 1 },
+      "inserted_at": "2024-02-21T14:00:00Z",
+      "updated_at": "2024-02-21T14:00:00Z"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+### List Pipelines
+
+`GET /api/v1/pipelines`
+
+Returns a paginated list of all pipelines within the caller's organisation.
+
+**Required permission:** `pipeline:show`
+
+#### Query Parameters
+
+<ParamField query="page" type="string">
+  Page number (1-indexed). Defaults to `1`.
+</ParamField>
+
+<ParamField query="name" type="string">
+  Filter by pipeline name (partial match supported).
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/pipelines?page=1&sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "pipelines": [
+    {
+      "id": "1232148nb3478",
+      "name": "Employee Offer Pipeline",
+      "source": "WraftForms",
+      "source_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "api_route": "client.crm.com",
+      "inserted_at": "2024-02-21T14:00:00Z",
+      "updated_at": "2024-02-21T14:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 2,
+  "total_entries": 15
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Pipeline
+
+`GET /api/v1/pipelines/:id`
+
+Retrieves full details for a single pipeline including its stages and creator information.
+
+**Required permission:** `pipeline:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the pipeline.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/pipelines/1232148nb3478 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update a Pipeline
+
+`PUT /api/v1/pipelines/:id`
+
+Updates the name, source, source ID, or API route of an existing pipeline. The pipeline must belong to the caller's organisation.
+
+**Required permission:** `pipeline:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the pipeline to update.
+</ParamField>
+
+#### Request Body
+
+Same fields as [Create a Pipeline](#create-a-pipeline). All fields are required on update.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/pipelines/1232148nb3478 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Offer Pipeline",
+    "source": "WraftForms",
+    "source_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "api_route": "client.crm.com"
+  }'
+```
+</CodeGroup>
+
+---
+
+### Delete a Pipeline
+
+`DELETE /api/v1/pipelines/:id`
+
+Permanently deletes a pipeline. The search index entry is also updated to reflect the deletion.
+
+**Required permission:** `pipeline:delete`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the pipeline to delete.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/pipelines/1232148nb3478 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Pipeline Stages
+
+Each pipeline is made up of one or more **pipe stages**. A stage maps a content type and data template (and optionally a flow state) to one step of document generation.
+
+### Create a Pipe Stage
+
+`POST /api/v1/pipelines/:pipeline_id/pipe_stages`
+
+Creates a new stage within the specified pipeline.
+
+**Required permission:** `pipeline:manage`
+
+#### Path Parameters
+
+<ParamField path="pipeline_id" type="string" required>
+  UUID of the parent pipeline.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="content_type_id" type="string" required>
+  UUID of the content type used for document generation in this stage.
+</ParamField>
+
+<ParamField body="data_template_id" type="string" required>
+  UUID of the data template to apply during generation.
+</ParamField>
+
+<ParamField body="state_id" type="string">
+  UUID of the flow state to assign to the generated document. Optional.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the newly created pipe stage.</ResponseField>
+<ResponseField name="content_type" type="object">Full content type object (id, name, description, prefix, color).</ResponseField>
+<ResponseField name="data_template" type="object">Full data template object (id, title, title_template, data).</ResponseField>
+<ResponseField name="state" type="object">Flow state object (id, state, order), if provided.</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/pipe_stages \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_type_id": "12lkjn3490u12",
+    "data_template_id": "23e40p9lknsd478",
+    "state_id": "550e8400-e29b-41d4-a716-446655440000"
+  }'
+```
+
+```json Response
+{
+  "id": "kjasfqjbn",
+  "content_type": {
+    "id": "12lkjn3490u12",
+    "name": "Offer Letter",
+    "description": "An offer letter",
+    "prefix": "OFFLET",
+    "color": "#ffffff"
+  },
+  "data_template": {
+    "id": "23e40p9lknsd478",
+    "title": "Standard Offer",
+    "title_template": "Offer for [name]",
+    "data": "Dear [name], ..."
+  },
+  "state": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "state": "Draft",
+    "order": 1
+  },
+  "inserted_at": "2024-02-21T14:00:00Z",
+  "updated_at": "2024-02-21T14:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Update a Pipe Stage
+
+`PUT /api/v1/pipe_stages/:id`
+
+Updates an existing pipe stage's content type, data template, or state assignment.
+
+**Required permission:** `pipeline:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the pipe stage to update.
+</ParamField>
+
+#### Request Body
+
+Same fields as [Create a Pipe Stage](#create-a-pipe-stage).
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/pipe_stages/kjasfqjbn \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_type_id": "new-content-type-id",
+    "data_template_id": "new-data-template-id"
+  }'
+```
+</CodeGroup>
+
+---
+
+### Delete a Pipe Stage
+
+`DELETE /api/v1/pipe_stages/:id`
+
+Deletes a pipe stage from the pipeline.
+
+**Required permission:** `pipeline:delete`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the pipe stage to delete.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/pipe_stages/kjasfqjbn \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "kjasfqjbn",
+  "inserted_at": "2024-02-21T14:00:00Z",
+  "updated_at": "2024-02-21T14:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+## Trigger History
+
+Every time a pipeline runs — whether triggered by a form entry or an API call — Wraft records a **trigger history** entry. Use these endpoints to audit past executions, inspect input data, and download generated zip archives.
+
+### List Trigger Histories
+
+`GET /api/v1/trigger_histories`
+
+Returns a paginated list of all trigger history entries for the caller's organisation.
+
+**Required permission:** `pipeline:show`
+
+#### Query Parameters
+
+<ParamField query="page" type="string">
+  Page number. Defaults to `1`.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="triggers" type="array">
+  Array of trigger history objects.
+  <Expandable title="Trigger history fields">
+    <ResponseField name="id" type="string">Trigger history UUID.</ResponseField>
+    <ResponseField name="data" type="object">Input data passed to the pipeline at trigger time.</ResponseField>
+    <ResponseField name="response" type="object">
+      Execution response. Includes `documents`, `documents_count`, `status`, `state`, `pipeline_id`, `trigger_history_id`, and `input_data`.
+    </ResponseField>
+    <ResponseField name="state" type="string">Execution state: `"executing"`, `"success"`, or `"failed"`.</ResponseField>
+    <ResponseField name="start_time" type="string">Execution start time.</ResponseField>
+    <ResponseField name="end_time" type="string">Execution end time.</ResponseField>
+    <ResponseField name="duration" type="integer">Duration in seconds.</ResponseField>
+    <ResponseField name="zip_file" type="string">Filename of the generated output zip archive.</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="page_number" type="integer">Current page number.</ResponseField>
+<ResponseField name="total_pages" type="integer">Total number of pages.</ResponseField>
+<ResponseField name="total_entries" type="integer">Total number of trigger histories.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/trigger_histories?page=1" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "triggers": [
+    {
+      "id": "jhdiuh23y498sjdbda",
+      "data": { "name": "John Doe" },
+      "state": "success",
+      "response": {
+        "documents": [{ "id": "123", "instance_id": "CTR001", "title": "Document Title" }],
+        "documents_count": 1,
+        "status": "completed",
+        "state": "executing",
+        "pipeline_id": "a9cc343b-857e-4e8a-8262-fc7badaebdfs",
+        "trigger_history_id": "jhdiuh23y498sjdbda"
+      },
+      "start_time": "2024-01-21T14:00:00Z",
+      "end_time": "2024-01-21T14:12:00Z",
+      "duration": 720,
+      "zip_file": "builds-2024-01-21T14:11:58.565745Z.zip",
+      "inserted_at": "2024-01-21T14:00:00Z",
+      "updated_at": "2024-01-21T14:12:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 2,
+  "total_entries": 15
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Trigger History Entry
+
+`GET /api/v1/trigger_histories/:id`
+
+Retrieves full details for a single trigger history record, including input data, response payload, and execution metadata.
+
+**Required permission:** `pipeline:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the trigger history entry.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/trigger_histories/jhdiuh23y498sjdbda \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Complete Workflow Example
+
+The following example walks through creating a pipeline, adding a stage, and then verifying the trigger history after a form submission.
+
+<Steps>
+  <Step title="Create the pipeline">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/pipelines \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "HR Onboarding Pipeline",
+        "source": "WraftForms",
+        "source_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "api_route": "hr.internal.crm.com"
+      }'
+    ```
+  </Step>
+  <Step title="Add a pipe stage">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/pipelines/1232148nb3478/pipe_stages \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "content_type_id": "12lkjn3490u12",
+        "data_template_id": "23e40p9lknsd478",
+        "state_id": "550e8400-e29b-41d4-a716-446655440000"
+      }'
+    ```
+  </Step>
+  <Step title="Submit a form entry to trigger the pipeline">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/entries \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "pipeline_id": "1232148nb3478",
+        "data": [
+          { "field_id": "0b214501-05be-4d58-a407-51fc763428cd", "value": "Jane Smith" },
+          { "field_id": "1c325612-16cf-5e69-b518-62gd874539de", "value": "Engineering" }
+        ]
+      }'
+    ```
+  </Step>
+  <Step title="Check trigger history">
+    ```bash cURL
+    curl -X GET "https://api.wraft.com/api/v1/trigger_histories?page=1" \
+      -H "Authorization: Bearer <token>"
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  Pipeline names must be unique within an organisation. If you receive a `422 Unprocessable Entity` response with a message about duplicate names, choose a different name before retrying.
+</Tip>

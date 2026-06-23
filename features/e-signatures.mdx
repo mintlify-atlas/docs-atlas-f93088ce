@@ -1,0 +1,195 @@
+---
+title: "Electronic Signatures: DocuSign and Documenso Integration"
+sidebarTitle: "E-Signatures"
+description: "Send Wraft documents for electronic signature via DocuSign or Documenso, specifying signers by name and email, and track envelope status through the API."
+---
+
+Wraft integrates with two leading electronic signature providers — **DocuSign** and **Documenso** — to let you collect legally binding signatures on documents without leaving your document workflow. Once a document is in the appropriate state, you send it for signature with a list of signers; Wraft handles the delivery and tracks the envelope status for you.
+
+## Supported Providers
+
+<CardGroup cols={2}>
+  <Card title="DocuSign" icon="file-signature">
+    Industry-standard e-signature platform. Wraft uses DocuSign's Authorization Code Grant + PKCE flow. Signers receive an email from DocuSign and sign via anchor-based signature tabs embedded in the document.
+  </Card>
+  <Card title="Documenso" icon="pen-nib">
+    Open-source DocuSign alternative. Wraft uses Documenso's REST API to create the document, upload the PDF, place signature fields at explicit coordinates, and send — all in a single call.
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+Before sending a document for signature, configure your integration credentials:
+
+<Steps>
+  <Step title="Configure provider credentials">
+    Add your DocuSign or Documenso credentials via the integration config API:
+
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/integration_configs \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "provider": "docusign",
+        "config": {
+          "client_id": "YOUR_DOCUSIGN_CLIENT_ID",
+          "client_secret": "YOUR_DOCUSIGN_CLIENT_SECRET",
+          "redirect_uri": "https://your-app.example.com/auth/docusign/callback"
+        }
+      }'
+    ```
+  </Step>
+  <Step title="Authorise the DocuSign connection (DocuSign only)">
+    DocuSign requires an OAuth authorisation flow. Redirect users to the authorization URL returned by:
+
+    ```bash cURL
+    GET /api/v1/integrations/docusign/auth?org_id=:org_id
+    ```
+
+    After the user authorises, DocuSign redirects to your `redirect_uri`. Wraft exchanges the code for tokens and stores them automatically.
+  </Step>
+  <Step title="Verify the document exists and is accessible">
+    The document must exist in Wraft and belong to your current organisation. Retrieve it via `GET /api/v1/contents/:id` before sending for signature.
+  </Step>
+</Steps>
+
+## Sending a Document for Signature
+
+`POST /api/v1/contents/:id/sign`
+
+Provide the document `id` in the path, the provider `type`, and an array of `signers` (each with `name` and `email`). For Documenso, you can additionally specify coordinate-based signature placement using `page`, `x`, `y`, `width`, and `height`.
+
+<CodeGroup>
+
+```bash DocuSign
+curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "docusign",
+    "signers": [
+      {
+        "name": "Jane Smith",
+        "email": "jane.smith@example.com",
+        "anchor": "SIGN_HERE"
+      },
+      {
+        "name": "Bob Johnson",
+        "email": "bob.johnson@example.com"
+      }
+    ]
+  }'
+```
+
+```bash Documenso
+curl -X POST https://api.wraft.com/api/v1/contents/doc-uuid-here/sign \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "documenso",
+    "signers": [
+      {
+        "name": "Jane Smith",
+        "email": "jane.smith@example.com",
+        "page": 1,
+        "x": 150,
+        "y": 300,
+        "width": 150,
+        "height": 50
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "envelopeId": "docusign-envelope-id",
+  "status": "sent",
+  "uri": "/envelopes/docusign-envelope-id"
+}
+```
+
+</CodeGroup>
+
+<ParamField body="type" type="string" required>
+  The signature provider to use. Must be `"docusign"` or `"documenso"`.
+</ParamField>
+
+<ParamField body="signers" type="array" required>
+  An array of signer objects. Each signer requires `name` and `email`.
+</ParamField>
+
+<ParamField body="signers[].anchor" type="string">
+  **DocuSign only.** The anchor string in the document where the signature tab is placed. Defaults to `"SIGN_HERE"` if not provided.
+</ParamField>
+
+<ParamField body="signers[].page" type="integer">
+  **Documenso only.** The page number where the signature field should appear.
+</ParamField>
+
+<ParamField body="signers[].x" type="integer">
+  **Documenso only.** Horizontal coordinate of the signature field in pixels.
+</ParamField>
+
+<ParamField body="signers[].y" type="integer">
+  **Documenso only.** Vertical coordinate of the signature field in pixels.
+</ParamField>
+
+## How It Works
+
+<Tabs>
+  <Tab title="DocuSign flow">
+    <Steps>
+      <Step title="Retrieve the document PDF">
+        Wraft fetches the rendered PDF from MinIO object storage at the path `organisations/{org_id}/contents/{instance_id}/{instance_id}-v1.pdf`.
+      </Step>
+      <Step title="Build the envelope">
+        The PDF is base64-encoded and attached to a DocuSign envelope along with the signer list. Each signer receives a `signHereTab` anchored to the `anchor` string in the document.
+      </Step>
+      <Step title="Submit the envelope">
+        Wraft posts the envelope to `POST /restapi/v2.1/accounts/{account_id}/envelopes` with status `sent`. DocuSign immediately emails each signer.
+      </Step>
+      <Step title="Track status">
+        Use `GET /api/v1/integrations/docusign/envelopes/:envelope_id` to check the current envelope status.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Documenso flow">
+    <Steps>
+      <Step title="Create the document in Documenso">
+        Wraft calls `POST /api/v1/documents` on Documenso with the document title, signer list, and metadata. Documenso returns a document ID and an S3 upload URL.
+      </Step>
+      <Step title="Upload the PDF">
+        The PDF binary is uploaded directly to the pre-signed S3 URL returned by Documenso.
+      </Step>
+      <Step title="Place signature fields">
+        For each signer, Wraft creates a `SIGNATURE` field at the specified coordinates on the specified page via `POST /api/v1/documents/{doc_id}/fields`.
+      </Step>
+      <Step title="Send for signing">
+        A final `POST /api/v1/documents/{doc_id}/send` call triggers Documenso to email each signer.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Signature Status Tracking
+
+After sending, you can retrieve the status of an existing signature request:
+
+```bash cURL
+# Check DocuSign envelope status
+GET /api/v1/integrations/docusign/envelopes/:envelope_id
+
+# List e-signature records for a document
+GET /api/v1/contents/:id/signatures
+```
+
+The `ESignature` record in Wraft stores `signature_type` (`:electronic`, `:digital`, or `:handwritten`), `signature_date`, `is_valid`, `ip_address`, `verification_token`, and `signature_data` for audit purposes.
+
+<Warning>
+  The document must belong to the authenticated user's current organisation. Attempting to sign a document from another organisation returns a `404 Not Found` response.
+</Warning>
+
+<Tip>
+  For DocuSign, the `anchor` string must appear verbatim as plain text in the PDF. Common choices are `SIGN_HERE`, `SIGNATURE`, or a custom string unique to each signer's section of the document.
+</Tip>

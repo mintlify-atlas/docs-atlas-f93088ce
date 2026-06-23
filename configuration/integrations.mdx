@@ -1,0 +1,297 @@
+---
+title: "Configuring Third-Party Integrations for Wraft Platform"
+sidebarTitle: "Integrations"
+description: "Set up Wraft's third-party integrations for e-signatures (DocuSign, Documenso) and cloud storage imports (Google Drive, Dropbox, OneDrive) via REST API."
+---
+
+Wraft connects to third-party services for two broad purposes: e-signature workflows and cloud storage imports. E-signature integrations let you send documents directly to DocuSign or Documenso for signing. Cloud storage integrations let users browse and import files from Google Drive, Dropbox, or OneDrive into Wraft's document repository. All integrations are managed on a per-organisation basis through the REST API.
+
+Integration records are stored in the database and are scoped to an organisation. Each integration has a `provider` (e.g. `"docusign"`), a `category`, an `enabled` flag, and an encrypted `config` field that holds provider-specific credentials. Credentials are encrypted at rest using the `CLOAK_KEY`.
+
+---
+
+## Available Integrations
+
+<CardGroup cols={2}>
+  <Card title="DocuSign" icon="signature">
+    Send documents for electronic signature using DocuSign's envelope flow. Uses OAuth 2.0 Authorization Code with PKCE.
+  </Card>
+  <Card title="Documenso" icon="pen-nib">
+    Open-source e-signature platform. Configured with an API token and uses coordinate-based signature field placement.
+  </Card>
+  <Card title="Google Drive" icon="google-drive">
+    Browse, search, and import files and folders from Google Drive. OAuth 2.0 with refresh token support.
+  </Card>
+  <Card title="Slack" icon="slack">
+    Receive document lifecycle notifications in Slack channels. Configured with a bot token and signing secret.
+  </Card>
+</CardGroup>
+
+---
+
+## E-Signature Integrations
+
+### DocuSign
+
+DocuSign uses an OAuth 2.0 Authorization Code Grant flow with PKCE. You must first create an integration record with the required credentials, then complete the OAuth handshake to obtain an access token.
+
+#### Step 1 — Create the integration config
+
+```shell
+POST /api/v1/integrations/new
+```
+
+<CodeGroup>
+```json Request body
+{
+  "provider": "docusign",
+  "name": "DocuSign",
+  "category": "document_management",
+  "config": {
+    "client_id": "your-docusign-integration-key",
+    "client_secret": "your-docusign-client-secret",
+    "redirect_uri": "https://your-frontend.com/integrations/docusign/callback"
+  }
+}
+```
+
+```json Response (201 Created)
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "provider": "docusign",
+  "name": "DocuSign",
+  "category": "document_management",
+  "enabled": false
+}
+```
+</CodeGroup>
+
+#### Step 2 — Initiate the OAuth flow
+
+Call the auth endpoint to retrieve the DocuSign authorization URL. Redirect the user's browser to this URL.
+
+```shell
+GET /api/v1/integrations/docusign/auth
+```
+
+```json Response
+{
+  "status": "success",
+  "redirect_url": "https://account-d.docusign.com/oauth/auth?response_type=code&..."
+}
+```
+
+After the user authorises the application in DocuSign, DocuSign will redirect back to your `redirect_uri` with an authorization code. Wraft's callback endpoint exchanges the code for an access token:
+
+```shell
+GET /api/v1/integrations/docusign/callback?code=<authorization_code>
+```
+
+The access token is stored encrypted in the integration's `metadata` field. The integration is ready to send documents once the OAuth flow completes.
+
+#### Required config fields
+
+<ParamField body="client_id" type="string" required>
+  DocuSign Integration Key (Client ID) from the DocuSign developer portal.
+</ParamField>
+
+<ParamField body="client_secret" type="string" required>
+  DocuSign Client Secret corresponding to the Integration Key.
+</ParamField>
+
+<ParamField body="redirect_uri" type="string" required>
+  OAuth2 Redirect URI. Must be registered in the DocuSign app settings and match exactly.
+</ParamField>
+
+---
+
+### Documenso
+
+Documenso is configured with a single API token. No OAuth flow is required. The integration uses coordinate-based signature placement — each signer is assigned explicit `page`, `x`, `y`, `width`, and `height` values for their signature field.
+
+#### Create the integration config
+
+```shell
+POST /api/v1/integrations/new
+```
+
+<CodeGroup>
+```json Request body
+{
+  "provider": "documenso",
+  "name": "Documenso",
+  "category": "document_management",
+  "config": {
+    "token": "your-documenso-api-token"
+  }
+}
+```
+
+```json Response (201 Created)
+{
+  "id": "661f9511-f30c-52e5-b827-557766551111",
+  "provider": "documenso",
+  "name": "Documenso",
+  "category": "document_management",
+  "enabled": false
+}
+```
+</CodeGroup>
+
+#### Required config fields
+
+<ParamField body="token" type="string" required>
+  Documenso API Token generated in your Documenso account settings. Used as a Bearer token on all API calls to `https://app.documenso.com/api/v1`.
+</ParamField>
+
+---
+
+## Cloud Storage Integrations
+
+Cloud storage integrations require OAuth credentials to be configured in `config/runtime.exs` via environment variables. The OAuth flow is initiated through the `/api/v1/cloud_auth` endpoints.
+
+### Google Drive
+
+| Variable | Description |
+|---|---|
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID from the Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 Client Secret |
+| `REDIRECT_URI` | OAuth callback URI registered in the Google Cloud Console |
+
+Once authenticated, users can list, search, and import files and folders from their Google Drive.
+
+---
+
+## Integration Management API
+
+All integration endpoints require authentication. Integration management endpoints additionally require the `integration:manage` or `integration:show` RBAC permission.
+
+### Listing and Viewing
+
+<CodeGroup>
+```shell List all organisation integrations
+GET /api/v1/integrations/
+```
+
+```shell Get a single integration by ID
+GET /api/v1/integrations/:id
+```
+
+```shell List available integration configs (with enable status)
+GET /api/v1/integrations/configs
+```
+
+```shell Get config details for a specific provider
+GET /api/v1/integrations/configs/:id
+```
+
+```shell Get config structure for a provider
+GET /api/v1/integrations/:provider/config
+```
+
+```shell List integrations grouped by category
+GET /api/v1/integrations/configs/categories
+```
+</CodeGroup>
+
+### Creating and Updating
+
+<CodeGroup>
+```shell Create a new integration
+POST /api/v1/integrations/new
+```
+
+```shell Enable an integration
+PUT /api/v1/integrations/:id/enable
+```
+
+```shell Disable an integration
+PUT /api/v1/integrations/:id/disable
+```
+
+```shell Update integration credentials
+PUT /api/v1/integrations/:id/config
+```
+
+```shell Update event subscriptions
+PUT /api/v1/integrations/:id/events
+```
+</CodeGroup>
+
+**Update config request body** — pass only the fields you want to change:
+
+```json
+{
+  "client_id": "new-client-id",
+  "client_secret": "new-client-secret"
+}
+```
+
+**Update events request body** — pass the full list of event IDs to subscribe to:
+
+```json
+{
+  "events": ["envelope.signed", "envelope.sent"]
+}
+```
+
+### Deleting
+
+```shell
+DELETE /api/v1/integrations/:id
+```
+
+Returns `204 No Content` on success. The integration record and its encrypted config are permanently removed.
+
+---
+
+## Integration Categories and Events
+
+Each provider belongs to a category and supports a set of subscribable events. Query the categories endpoint to discover available providers and their event definitions:
+
+```shell
+GET /api/v1/integrations/configs/categories
+```
+
+```json Example response
+[
+  {
+    "category": "document_management",
+    "integrations": [
+      {
+        "provider": "docusign",
+        "name": "DocuSign",
+        "enabled": false,
+        "available_events": [
+          { "id": "envelope.signed", "name": "Envelope Signed" },
+          { "id": "envelope.sent", "name": "Envelope Sent" }
+        ]
+      },
+      {
+        "provider": "documenso",
+        "name": "Documenso",
+        "enabled": false,
+        "available_events": [
+          { "id": "envelope.signed", "name": "Envelope Signed" },
+          { "id": "envelope.sent", "name": "Envelope Sent" }
+        ]
+      }
+    ]
+  },
+  {
+    "category": "file_sharing",
+    "integrations": [
+      {
+        "provider": "google_drive",
+        "name": "Google Drive",
+        "enabled": false,
+        "available_events": []
+      }
+    ]
+  }
+]
+```
+
+<Note>
+Some integrations have `is_feature_enabled: false` in the current release (Slack, Documenso, Zapier, Okta). These providers appear in the API response but creating an integration record for them may not fully activate all features. Check the Swagger UI at `http://localhost:4000/spec/swaggerui` for the current operation status.
+</Note>

@@ -1,0 +1,658 @@
+---
+title: "Forms, Form Entries, and Form Mappings API Reference"
+sidebarTitle: "Forms"
+description: "Build and manage WraftForms with typed fields and validations, collect form entries, and map form fields to content type fields for pipeline automation."
+---
+
+WraftForms are data-collection instruments that power Wraft's document automation. Each form contains one or more **typed fields** (text, file, date, etc.) with configurable validation rules. When a user submits a form entry, Wraft can automatically trigger associated pipelines to generate documents. **Form mappings** let you declare exactly which form field maps to which content type field in a pipeline stage.
+
+<Note>
+  Creating, updating, and deleting forms requires the `form:manage` or `form:delete` permission. Reading forms and entries requires `form:show` or `form_entry:show` respectively.
+</Note>
+
+---
+
+## Forms
+
+### Create a Form
+
+`POST /api/v1/forms`
+
+Creates a new form within the caller's organisation. The `prefix` field generates a unique identifier for each form entry (e.g. `INSFORM-001`). The `status` must be `active` or `inactive`.
+
+**Required permission:** `form:manage`
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Display name of the form. Example: `"Insurance Form"`.
+</ParamField>
+
+<ParamField body="description" type="string" required>
+  Human-readable description of the form's purpose.
+</ParamField>
+
+<ParamField body="prefix" type="string" required>
+  Short alphanumeric prefix used to generate entry identifiers. Must be unique across the organisation. Example: `"INSFORM"`.
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Initial status. Accepted values: `"active"`, `"inactive"`.
+</ParamField>
+
+<ParamField body="fields" type="array">
+  List of field definitions to add to the form on creation.
+
+  <Expandable title="Field definition">
+    <ParamField body="name" type="string" required>
+      Display name of the field. Used to auto-generate `machine_name` (lowercase, underscored).
+    </ParamField>
+    <ParamField body="field_type_id" type="string" required>
+      UUID of the field type (String, File, Date, etc.).
+    </ParamField>
+    <ParamField body="description" type="string">
+      Helper text shown to the user filling out the form.
+    </ParamField>
+    <ParamField body="meta" type="object">
+      Arbitrary field-type–specific metadata. For file fields: `{"src": "/img/img.png", "alt": "Image"}`.
+    </ParamField>
+    <ParamField body="order" type="integer">
+      Display order of the field within the form. Must be unique per form.
+    </ParamField>
+    <ParamField body="validations" type="array">
+      Array of validation rules.
+      <Expandable title="Validation object">
+        <ParamField body="validation" type="object" required>
+          An object with `rule` (e.g. `"required"`, `"file_size"`, `"min_length"`) and `value` (the threshold).
+        </ParamField>
+        <ParamField body="error_message" type="string" required>
+          Message shown when the validation fails.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="pipeline_ids" type="array">
+  UUIDs of existing pipelines to associate with this form. Submissions will automatically trigger these pipelines.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the created form.</ResponseField>
+<ResponseField name="name" type="string">Form name.</ResponseField>
+<ResponseField name="description" type="string">Form description.</ResponseField>
+<ResponseField name="prefix" type="string">Entry ID prefix.</ResponseField>
+<ResponseField name="status" type="string">`"active"` or `"inactive"`.</ResponseField>
+<ResponseField name="fields" type="array">
+  Ordered list of form fields.
+  <Expandable title="Field response">
+    <ResponseField name="id" type="string">Field UUID.</ResponseField>
+    <ResponseField name="name" type="string">Display name.</ResponseField>
+    <ResponseField name="machine_name" type="string">Auto-generated snake_case identifier used as the key in form entries.</ResponseField>
+    <ResponseField name="description" type="string">Helper text.</ResponseField>
+    <ResponseField name="meta" type="object">Field-type metadata.</ResponseField>
+    <ResponseField name="validations" type="array">Applied validation rules.</ResponseField>
+    <ResponseField name="field_type" type="object">Resolved field type (id, name, description).</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="pipelines" type="array">Associated pipelines (id, name, api_route).</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/forms \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Insurance Enrollment Form",
+    "description": "Fill in details to activate corporate insurance",
+    "prefix": "INSFORM",
+    "status": "active",
+    "fields": [
+      {
+        "name": "Full Name",
+        "field_type_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "description": "Enter your full legal name",
+        "meta": {},
+        "validations": [
+          { "validation": { "rule": "required", "value": true }, "error_message": "cannot be blank" }
+        ]
+      },
+      {
+        "name": "Photo",
+        "field_type_id": "7gb96g75-6828-5673-c4gd-3d074g77bgb7",
+        "description": "Upload your photo",
+        "meta": { "src": "/img/img.png", "alt": "Profile photo" },
+        "validations": [
+          { "validation": { "rule": "required", "value": true }, "error_message": "cannot be blank" },
+          { "validation": { "rule": "file_size", "value": 2000 }, "error_message": "must be under 2000 KB" }
+        ]
+      }
+    ],
+    "pipeline_ids": ["1232148nb3478"]
+  }'
+```
+
+```json Response
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "name": "Insurance Enrollment Form",
+  "description": "Fill in details to activate corporate insurance",
+  "prefix": "INSFORM",
+  "status": "active",
+  "inserted_at": "2024-08-21T14:00:00Z",
+  "updated_at": "2024-08-21T14:00:00Z",
+  "fields": [
+    {
+      "id": "0b214501-05be-4d58-a407-51fc763428cd",
+      "name": "Full Name",
+      "machine_name": "full_name",
+      "description": "Enter your full legal name",
+      "meta": {},
+      "validations": [
+        { "validation": { "rule": "required", "value": true }, "error_message": "cannot be blank" }
+      ],
+      "field_type": {
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "name": "String",
+        "description": "A text input field"
+      }
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "1232148nb3478",
+      "name": "HR Onboarding Pipeline",
+      "api_route": "client.crm.com"
+    }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+### List Forms
+
+`GET /api/v1/forms`
+
+Returns a paginated list of all forms within the caller's organisation.
+
+**Required permission:** `form:show`
+
+#### Query Parameters
+
+<ParamField query="page" type="string">Page number. Defaults to `1`.</ParamField>
+<ParamField query="name" type="string">Filter by form name (partial match).</ParamField>
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`, `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/forms?page=1&sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "forms": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "name": "Insurance Enrollment Form",
+      "description": "Fill in details to activate corporate insurance",
+      "prefix": "INSFORM",
+      "status": "active",
+      "inserted_at": "2024-08-21T14:00:00Z",
+      "updated_at": "2024-08-21T14:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 2,
+  "total_entries": 15
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Form
+
+`GET /api/v1/forms/:id`
+
+Retrieves a form with all its fields (including field types) and associated pipelines.
+
+**Required permission:** `form:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the form.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update a Form
+
+`PUT /api/v1/forms/:id`
+
+Updates a form's metadata and fields. You may add new fields, remove existing fields, or update their validations. Pass `field_id` on existing field items to update them in place.
+
+**Required permission:** `form:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the form.</ParamField>
+
+#### Request Body
+
+Same fields as [Create a Form](#create-a-form). Use `field_id` within each field item to target an existing form field for update.
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Insurance Form",
+    "description": "Updated description",
+    "prefix": "INSFORM",
+    "status": "active",
+    "fields": [
+      {
+        "field_id": "0b214501-05be-4d58-a407-51fc763428cd",
+        "name": "Full Name",
+        "field_type_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "validations": [
+          { "validation": { "rule": "required", "value": true }, "error_message": "cannot be blank" }
+        ]
+      }
+    ]
+  }'
+```
+</CodeGroup>
+
+---
+
+### Update Form Status
+
+`PATCH /api/v1/forms/:id/status`
+
+Activates or deactivates a form. Only active forms accept new entries.
+
+**Required permission:** `form:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the form.</ParamField>
+
+#### Request Body
+
+<ParamField body="status" type="string" required>
+  New status. Accepted values: `"active"`, `"inactive"`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PATCH https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/status \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "inactive" }'
+```
+
+```json Response
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "name": "Insurance Enrollment Form",
+  "status": "inactive",
+  "inserted_at": "2024-08-21T14:00:00Z",
+  "updated_at": "2024-08-22T09:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Reorder Form Fields
+
+`PUT /api/v1/forms/:id/align-fields`
+
+Updates the display order of fields within a form. Pass a map of `{ "<field_uuid>": <order_integer> }` pairs.
+
+**Required permission:** `form:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the form.</ParamField>
+
+#### Request Body
+
+<ParamField body="fields" type="object" required>
+  An object whose keys are form field UUIDs and values are the desired integer order. Order values must be unique across the form.
+
+  ```json
+  {
+    "fields": {
+      "3fa85f64-5717-4562-b3fc-2c963f66afa6": 1,
+      "3fa85f64-5717-4562-b3fc-2c963f66afa7": 2
+    }
+  }
+  ```
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/align-fields \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fields": {
+      "3fa85f64-5717-4562-b3fc-2c963f66afa6": 1,
+      "0b214501-05be-4d58-a407-51fc763428cd": 2
+    }
+  }'
+```
+</CodeGroup>
+
+---
+
+### Delete a Form
+
+`DELETE /api/v1/forms/:id`
+
+Permanently deletes a form and all its entries. The Typesense search index entry is also removed.
+
+**Required permission:** `form:delete`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the form.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Form Entries
+
+Form entries store the submitted data for a given form. If the form has one or more associated pipelines, submitting an entry will automatically trigger those pipelines to generate documents.
+
+### Submit a Form Entry
+
+`POST /api/v1/forms/:form_id/entries`
+
+Submits a new entry for the specified form. If a `pipeline_id` is included, Wraft verifies the pipeline is linked to this form and immediately triggers it with the submitted data.
+
+**Required permission:** `form_entry:manage`
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the form to submit an entry for.</ParamField>
+
+#### Request Body
+
+<ParamField body="data" type="array" required>
+  List of field value pairs. Each item maps a `field_id` (UUID of the form field) to its submitted `value`.
+
+  <Expandable title="Data item">
+    <ParamField body="field_id" type="string" required>UUID of the form field.</ParamField>
+    <ParamField body="value" type="string" required>Submitted value for that field.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="pipeline_id" type="string">
+  UUID of a specific pipeline to trigger. If omitted, all pipelines associated with the form are triggered.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the form entry.</ResponseField>
+<ResponseField name="form_id" type="string">UUID of the parent form.</ResponseField>
+<ResponseField name="user_id" type="string">UUID of the submitting user.</ResponseField>
+<ResponseField name="pipeline_id" type="string">UUID of the triggered pipeline, if applicable.</ResponseField>
+<ResponseField name="trigger_id" type="string">UUID of the resulting trigger history record.</ResponseField>
+<ResponseField name="status" type="string">Entry status: `"draft"`, `"submitted"`, `"processing"`, or `"completed"`.</ResponseField>
+<ResponseField name="data" type="object">The submitted field data as a map of `field_id → value`.</ResponseField>
+<ResponseField name="inserted_at" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 last-update timestamp.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/entries \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline_id": "aa18afe1-3383-4653-bc0e-505ec3bbfc19",
+    "data": [
+      { "field_id": "0b214501-05be-4d58-a407-51fc763428cd", "value": "Jane Smith" },
+      { "field_id": "1c325612-16cf-5e69-b518-62gd874539de", "value": "Engineering" }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "f507ca98-9848-49af-89f8-a21f12202ec0",
+  "form_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "user_id": "af2cf1c6-f342-4042-8425-6346e9fd6c44",
+  "pipeline_id": "aa18afe1-3383-4653-bc0e-505ec3bbfc19",
+  "trigger_id": "af2cf1c6-f342-4042-8425-6346e9fd6c44",
+  "status": "submitted",
+  "data": {
+    "0b214501-05be-4d58-a407-51fc763428cd": "Jane Smith",
+    "1c325612-16cf-5e69-b518-62gd874539de": "Engineering"
+  },
+  "inserted_at": "2024-04-17T07:10:17Z",
+  "updated_at": "2024-04-17T07:10:17Z"
+}
+```
+</CodeGroup>
+
+---
+
+### List Form Entries
+
+`GET /api/v1/forms/:form_id/entries`
+
+Returns a paginated list of entries submitted to the specified form.
+
+**Required permission:** `form_entry:show`
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the form.</ParamField>
+
+#### Query Parameters
+
+<ParamField query="page" type="integer">Page number. Defaults to `1`.</ParamField>
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `inserted_at`, `inserted_at_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/entries?page=1&sort=inserted_at_desc" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "entries": [
+    {
+      "id": "f507ca98-9848-49af-89f8-a21f12202ec0",
+      "form_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "user_id": "af2cf1c6-f342-4042-8425-6346e9fd6c44",
+      "status": "completed",
+      "data": { "0b214501-05be-4d58-a407-51fc763428cd": "Jane Smith" },
+      "inserted_at": "2024-04-17T07:10:17Z",
+      "updated_at": "2024-04-17T07:10:17Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 2,
+  "total_entries": 15
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Form Entry
+
+`GET /api/v1/forms/:form_id/entries/:id`
+
+Retrieves a single form entry.
+
+**Required permission:** `form_entry:show`
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the parent form.</ParamField>
+<ParamField path="id" type="string" required>UUID of the form entry.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/entries/f507ca98-9848-49af-89f8-a21f12202ec0 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Form Mappings
+
+Form mappings define the correspondence between a form's fields and the content type fields used in a pipe stage. They are required to correctly populate document templates when a pipeline is triggered.
+
+### Create a Form Mapping
+
+`POST /api/v1/forms/:form_id/mapping`
+
+Creates a mapping between the form's fields and the destination fields of a given pipe stage.
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the form to create a mapping for.</ParamField>
+
+#### Request Body
+
+<ParamField body="pipe_stage_id" type="string" required>
+  UUID of the pipe stage to map this form to. The stage must belong to a pipeline connected to this form.
+</ParamField>
+
+<ParamField body="mapping" type="array" required>
+  Array of source-to-destination field pairs.
+  <Expandable title="Mapping item">
+    <ParamField body="source" type="object" required>
+      The form field: `{ "id": "<form_field_uuid>", "name": "<field_name>" }`.
+    </ParamField>
+    <ParamField body="destination" type="object" required>
+      The content type field: `{ "id": "<content_type_field_uuid>", "name": "<field_name>" }`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/mapping \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipe_stage_id": "3fa85f64-5717-4562-b3fc-2c963f66afb7",
+    "mapping": [
+      {
+        "source": { "id": "0b214501-05be-4d58-a407-51fc763428cd", "name": "Full Name" },
+        "destination": { "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "employee_name" }
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "form_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "pipe_stage_id": "3fa85f64-5717-4562-b3fc-2c963f66afb7",
+  "mapping": [
+    {
+      "source": { "id": "0b214501-05be-4d58-a407-51fc763428cd", "name": "Full Name" },
+      "destination": { "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "employee_name" }
+    }
+  ],
+  "inserted_at": "2024-08-21T14:00:00Z",
+  "updated_at": "2024-08-21T14:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Show a Form Mapping
+
+`GET /api/v1/forms/:form_id/mapping/:mapping_id`
+
+Retrieves a single form mapping record.
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the parent form.</ParamField>
+<ParamField path="mapping_id" type="string" required>UUID of the form mapping.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/mapping/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update a Form Mapping
+
+`PUT /api/v1/forms/:form_id/mapping/:mapping_id`
+
+Replaces the mapping entries for an existing form mapping record.
+
+#### Path Parameters
+
+<ParamField path="form_id" type="string" required>UUID of the parent form.</ParamField>
+<ParamField path="mapping_id" type="string" required>UUID of the form mapping to update.</ParamField>
+
+#### Request Body
+
+Same body shape as [Create a Form Mapping](#create-a-form-mapping).
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/forms/3fa85f64-5717-4562-b3fc-2c963f66afa6/mapping/3fa85f64-5717-4562-b3fc-2c963f66afa6 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipe_stage_id": "3fa85f64-5717-4562-b3fc-2c963f66afb7",
+    "mapping": [
+      {
+        "source": { "id": "0b214501-05be-4d58-a407-51fc763428cd", "name": "Full Name" },
+        "destination": { "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "name": "employee_name" }
+      },
+      {
+        "source": { "id": "1c325612-16cf-5e69-b518-62gd874539de", "name": "Department" },
+        "destination": { "id": "4gb96g75-6828-5673-c4gd-3d074g77bgb7", "name": "department" }
+      }
+    ]
+  }'
+```
+</CodeGroup>
+
+<Tip>
+  The `machine_name` of each form field is auto-derived from the field's display `name` — spaces become underscores and everything is lowercased. If two fields would produce the same machine name, Wraft appends a numeric suffix (e.g. `name_1`, `name_2`). Machine names are used as the keys when passing form entry data to pipeline templates.
+</Tip>

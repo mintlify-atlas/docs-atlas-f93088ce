@@ -1,0 +1,223 @@
+---
+title: "Documents: Creating and Managing Instances in Wraft"
+sidebarTitle: "Documents"
+description: "Understand how Wraft document instances are created, versioned, collaborated on, and rendered to PDF through a structured approval lifecycle."
+---
+
+In Wraft, every individual document you produce — a specific employment contract for a named employee, a particular NDA for a vendor, an invoice for a client — is called a **document instance** (or simply a **content** in the API). An instance is a filled-in copy of a Content Type: the Content Type provides the schema and template, while the instance stores the actual field values and travels through the approval flow.
+
+Each instance is identified by a unique `instance_id` built from the Content Type's prefix and an auto-incrementing counter padded to four digits (e.g. `EMP0007`). This ID is immutable once assigned and serves as the human-readable document number within your organisation.
+
+## Document Lifecycle
+
+A document moves through a series of states defined by the Flow attached to its Content Type. The journey from first draft to final signed record is captured in the steps below.
+
+<Steps>
+  <Step title="Create">
+    A user creates an instance under a Content Type by supplying raw content and serialized field values. Wraft assigns a unique `instance_id`, sets `editable: true`, initialises version `1` for both the `save` and `build` tracks, and associates the creator as the first allowed user. The instance begins with no state (`state: nil`) until the first approval action moves it into the Flow's initial state.
+  </Step>
+  <Step title="Edit and Collaborate">
+    While `editable` is `true`, any allowed user can update the raw content and field values. Collaborators can be invited with a `viewer` or `editor` role. Every time the raw or serialized content changes, Wraft creates a new incremented version in the `save` track, keeping full history. Team members work together in real time through the built-in collaborative editor.
+  </Step>
+  <Step title="Build (Render to PDF)">
+    When the content is ready, the author triggers a build. Wraft feeds the instance's field values into the Layout's template (Typst `.typ` or LaTeX `.tex`), applies the Theme, and uses the configured rendering engine to produce a PDF. The output is stored in object storage. A new version entry is created in the `build` track, and a pre-signed download URL is returned.
+  </Step>
+  <Step title="Advance Through Approval States">
+    An approver for the current state reviews the document and either approves or rejects it. Approval moves the instance forward to the next state in the Flow; rejection moves it back to the previous state. Wraft records an `InstanceTransitionLog` entry for every state change, and sends notifications to relevant approvers at each step.
+  </Step>
+  <Step title="Final Approval">
+    When the document reaches the last state and is approved, `approval_status` is set to `true`. For contract-type documents, this triggers the "completed" event. The document may be digitally signed at this point if the organisation's flow includes a `:sign` state.
+  </Step>
+  <Step title="Archive or Lock">
+    Once finalised, an administrator can lock the document (`editable: false`) to prevent further edits. Locked documents are read-only; the lock can be toggled via the lock/unlock endpoint.
+  </Step>
+</Steps>
+
+## Versions
+
+Wraft maintains **two parallel version tracks** for every document instance:
+
+<CardGroup cols={2}>
+  <Card title="save track" icon="floppy-disk">
+    Created each time the document content (raw or serialized fields) changes. Only one version in this track is marked `current_version: true` at a time. Authors can restore any previous save version, which overwrites the current content.
+  </Card>
+  <Card title="build track" icon="file-pdf">
+    Created each time a PDF render is triggered successfully. Represents a rendered snapshot of the document at that point in time. The most recent successful build is surfaced as the downloadable `build` URL.
+  </Card>
+</CardGroup>
+
+You can list, compare, and restore versions through the API. The compare endpoint returns both a base and a target version's serialized content for diff display.
+
+## Collaboration
+
+Multiple users can collaborate on a document instance. The `allowed_users` array on an instance lists every user who has access to view and edit it. When a collaborator is invited:
+
+1. A `ContentCollaboration` record is created with status `pending`.
+2. The invited user accepts the invitation, changing status to `accepted`.
+3. Collaborators with the `editor` role can modify document content; `viewer` collaborators have read-only access.
+4. Access can be revoked at any time; revoked collaborators can be re-invited.
+
+<Note>
+  Collaborators scoped to a particular state. When a document transitions to a new state, the active collaborator list reflects users relevant to that stage.
+</Note>
+
+## Audit Logs
+
+Every significant action on a document — creation, update, build, approval, state change — is recorded in a `DocumentAuditLog` entry scoped to the organisation. Audit logs are immutable and ordered by time, giving you a complete, tamper-evident history of every document.
+
+```http
+GET /api/v1/contents/:id/logs
+```
+
+## Locking and Unlocking
+
+Locking prevents any further edits to a document without deleting it. This is useful for documents that have been signed or archived.
+
+```http
+PATCH /api/v1/contents/:id/lock-unlock
+Content-Type: application/json
+
+{ "editable": false }
+```
+
+Set `editable: true` to unlock the document and allow edits again.
+
+<Warning>
+  Attempting to update a locked document (`editable: false`) returns a `cant_update` error. Unlock the document first.
+</Warning>
+
+## API Reference
+
+### Create a Document Instance
+
+```http
+POST /api/v1/content_types/:c_type_id/contents
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+<CodeGroup>
+
+```json Request body
+{
+  "raw": "This Employment Contract is entered into between {{ company_name }} and {{ employee_name }}...",
+  "serialized": {
+    "title": "Employment Contract – Jane Doe",
+    "employee_name": "Jane Doe",
+    "start_date": "2025-08-01",
+    "company_name": "Acme Corp"
+  },
+  "type": 1
+}
+```
+
+```json Response (201)
+{
+  "id": "7c3f2b1a-...",
+  "instance_id": "EMP0007",
+  "editable": true,
+  "approval_status": false,
+  "state": null,
+  "content_type": { "id": "...", "name": "Employment Contract" }
+}
+```
+
+</CodeGroup>
+
+<ParamField body="raw" type="string" required>
+  The raw document content in the editor's markup format, used as input to the rendering engine.
+</ParamField>
+
+<ParamField body="serialized" type="object" required>
+  A map of field machine names to their values. Must include a `title` key for display and search purposes.
+</ParamField>
+
+<ParamField body="type" type="integer" required>
+  Document creation type: `1` = normal, `2` = bulk_build, `3` = pipeline_api, `4` = pipeline_hook.
+</ParamField>
+
+### Show a Document
+
+```http
+GET /api/v1/contents/:id
+```
+
+Returns the full instance including content type, current state with approvers, all build versions, collaboration records, approval systems, and a pre-signed URL for the most recent PDF build.
+
+### Update a Document
+
+```http
+PUT /api/v1/contents/:id
+Content-Type: application/json
+
+{
+  "raw": "Updated contract text...",
+  "serialized": { "title": "Employment Contract – Jane Doe", "employee_name": "Jane Doe" }
+}
+```
+
+Only allowed when `editable: true`. Creating a new version is handled automatically if the content differs from the previous save.
+
+### Update Document Metadata
+
+```http
+PUT /api/v1/contents/:id/meta
+Content-Type: application/json
+
+{
+  "type": "contract",
+  "expiry_date": "2026-08-01"
+}
+```
+
+Updates the `meta` map on the instance. For contract-type documents, `expiry_date` enables the expired/upcoming status filters on the index endpoint.
+
+### Advance Document State
+
+```http
+PATCH /api/v1/contents/:id/states
+Content-Type: application/json
+
+{ "state_id": "9d4e3c2b-..." }
+```
+
+Moves the document to the specified state. The target state must belong to the same Flow as the document's Content Type. This endpoint requires the `document:manage` permission.
+
+### Build (Render to PDF)
+
+```http
+POST /api/v1/contents/:id/build
+Content-Type: application/json
+
+{ "naration": "First draft render" }
+```
+
+Triggers the rendering pipeline. Wraft retrieves the Layout template and associated assets, merges the serialized field values, runs the engine (Typst or LaTeX/XeLaTeX), and stores the output PDF. Returns the updated instance with a `build` URL.
+
+### Lock or Unlock
+
+```http
+PATCH /api/v1/contents/:id/lock-unlock
+Content-Type: application/json
+
+{ "editable": false }
+```
+
+### Delete a Document
+
+```http
+DELETE /api/v1/contents/:id
+```
+
+Deletes the instance and removes all uploaded PDF artefacts from storage. This action is irreversible.
+
+## Approval Actions
+
+Approvers assigned to the current state can approve or reject a document through dedicated endpoints. These differ from `PATCH /states` in that they follow the Flow's automatic next/previous state logic rather than accepting an explicit `state_id`.
+
+```http
+POST /api/v1/contents/:id/approve
+POST /api/v1/contents/:id/reject
+```
+
+Both endpoints require the `document:review` permission and are gated by the approver list on the current state.

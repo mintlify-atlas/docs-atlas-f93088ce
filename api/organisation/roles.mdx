@@ -1,0 +1,454 @@
+---
+title: "Roles, Permissions, and Content Type Roles API Reference"
+sidebarTitle: "Roles"
+description: "Create and manage organisation roles with granular permission sets, assign roles to users and content types, and list all available system permissions."
+---
+
+Wraft's role-based access control (RBAC) system lets you define custom roles with fine-grained permissions and assign them to users within your organisation. Each role holds an array of permission strings that gate individual API operations. Roles can also be scoped to specific content types, limiting which users can create or manage documents of a particular type.
+
+---
+
+## Roles
+
+### Create a Role
+
+`POST /api/v1/roles`
+
+Creates a new role within the caller's current organisation. Role names must be unique within an organisation.
+
+**Required permission:** `role:manage`
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Display name for the role. Must be unique in the organisation. Example: `"Editor"`.
+</ParamField>
+
+<ParamField body="permissions" type="array">
+  Array of permission strings to grant to this role. Omit or pass an empty array to create a role with no permissions. See the [Permissions Reference](#permissions-reference) table below for valid values.
+
+  ```json
+  ["document:show", "document:manage", "form:show", "form:manage"]
+  ```
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="string">UUID of the created role.</ResponseField>
+<ResponseField name="name" type="string">Role name.</ResponseField>
+<ResponseField name="permissions" type="array">List of permission strings assigned to the role.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/roles \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Content Editor",
+    "permissions": [
+      "document:show",
+      "document:manage",
+      "variant:show",
+      "form:show",
+      "flow:show"
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2",
+  "name": "Content Editor",
+  "permissions": [
+    "document:show",
+    "document:manage",
+    "variant:show",
+    "form:show",
+    "flow:show"
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+### List Roles
+
+`GET /api/v1/roles`
+
+Returns all roles defined within the caller's organisation.
+
+**Required permission:** `role:show`
+
+#### Query Parameters
+
+<ParamField query="name" type="string">Filter by role name (partial match).</ParamField>
+<ParamField query="sort" type="string">
+  Sort order. Accepted values: `name`, `name_desc`.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/roles?sort=name" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+[
+  {
+    "id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2",
+    "name": "Content Editor",
+    "permissions": ["document:show", "document:manage"]
+  },
+  {
+    "id": "7411b2c3-3e33-352c-a3b4-bd686b918bb1",
+    "name": "Reviewer",
+    "permissions": ["document:show", "document:review"]
+  }
+]
+```
+</CodeGroup>
+
+---
+
+### Show a Role
+
+`GET /api/v1/roles/:id`
+
+Retrieves a single role including all its permissions and the content types it is associated with.
+
+**Required permission:** `role:show`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the role.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update a Role
+
+`PUT /api/v1/roles/:id`
+
+Updates the name and/or permissions of an existing role. The updated permissions list completely replaces the previous one.
+
+**Required permission:** `role:manage`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the role to update.</ParamField>
+
+#### Request Body
+
+<ParamField body="name" type="string" required>Updated role name.</ParamField>
+<ParamField body="permissions" type="array">Replacement list of permission strings.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Senior Editor",
+    "permissions": [
+      "document:show",
+      "document:manage",
+      "document:delete",
+      "variant:show",
+      "variant:manage",
+      "form:show",
+      "form:manage"
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2",
+  "name": "Senior Editor",
+  "permissions": [
+    "document:show",
+    "document:manage",
+    "document:delete",
+    "variant:show",
+    "variant:manage",
+    "form:show",
+    "form:manage"
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+### Delete a Role
+
+`DELETE /api/v1/roles/:id`
+
+Permanently deletes a role from the organisation. Users who held this role lose the permissions it granted.
+
+**Required permission:** `role:delete`
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the role to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Role Assignment
+
+### Assign a Role to a User
+
+`POST /api/v1/users/:user_id/roles/:role_id`
+
+Assigns the specified role to the given user within the current organisation. The role must belong to the same organisation as the caller. Wraft sends an in-app notification to the user informing them of the assignment.
+
+**Required permission:** `role:manage`
+
+#### Path Parameters
+
+<ParamField path="user_id" type="string" required>UUID of the user to receive the role.</ParamField>
+<ParamField path="role_id" type="string" required>UUID of the role to assign.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/af2cf1c6-f342-4042-8425-6346e9fd6c44/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "info": "Assigned the given role to the user successfully.!"
+}
+```
+</CodeGroup>
+
+---
+
+### Remove a Role from a User
+
+`DELETE /api/v1/users/:user_id/roles/:role_id`
+
+Removes a previously assigned role from the specified user. Wraft sends an in-app notification to the user about the change.
+
+**Required permission:** `role:manage`
+
+#### Path Parameters
+
+<ParamField path="user_id" type="string" required>UUID of the user.</ParamField>
+<ParamField path="role_id" type="string" required>UUID of the role to remove.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/users/af2cf1c6-f342-4042-8425-6346e9fd6c44/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "info": "Unassigned the given role for the user successfully.!"
+}
+```
+</CodeGroup>
+
+---
+
+## Content Type Roles
+
+Scoping a role to a content type restricts document operations (create, manage, review) to only those users who hold that role — useful for protecting sensitive document types.
+
+### Assign a Role to a Content Type
+
+`POST /api/v1/content_type_roles`
+
+Links a role to a content type so that only users with that role can create or manage documents of that type.
+
+#### Request Body
+
+<ParamField body="content_type_id" type="string" required>UUID of the content type.</ParamField>
+<ParamField body="role_id" type="string" required>UUID of the role to assign.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/content_type_roles \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content_type_id": "12lkjn3490u12",
+    "role_id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2"
+  }'
+```
+
+```json Response
+{
+  "id": "ct-role-uuid",
+  "content_type_id": "12lkjn3490u12",
+  "role_id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2"
+}
+```
+</CodeGroup>
+
+---
+
+### Remove a Content Type Role
+
+`DELETE /api/v1/content_type_roles/:id`
+
+Removes the role association from the content type. Users with that role regain access according to their other permissions.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the content type role record to delete.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.wraft.com/api/v1/content_type_roles/ct-role-uuid \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### List Roles for a Content Type
+
+`GET /api/v1/content_types/:id/roles`
+
+Returns all roles assigned to the specified content type.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the content type.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/content_types/12lkjn3490u12/roles \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Permissions
+
+### List All Permissions
+
+`GET /api/v1/permissions`
+
+Returns all available permission strings in Wraft, grouped by resource. Optionally filter by name or resource type.
+
+#### Query Parameters
+
+<ParamField query="name" type="string">Filter permissions by name.</ParamField>
+<ParamField query="resource" type="string">Filter by resource group name, e.g. `"Document"`, `"Pipeline"`.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/permissions?resource=Document" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "Document": [
+    { "id": "perm-001", "name": "document:show", "action": "Show" },
+    { "id": "perm-002", "name": "document:manage", "action": "Manage" },
+    { "id": "perm-003", "name": "document:delete", "action": "Delete" },
+    { "id": "perm-004", "name": "document:lock", "action": "Lock" },
+    { "id": "perm-005", "name": "document:review", "action": "Review" }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+## Permissions Reference
+
+The following table lists all permission strings used across the Wraft system. Assign these to roles to control what members of each role can do.
+
+| Permission | Resource | Description |
+|---|---|---|
+| `document:show` | Document | View documents and their details. |
+| `document:manage` | Document | Create and update documents. |
+| `document:delete` | Document | Delete documents. |
+| `document:lock` | Document | Lock a document to prevent further edits. |
+| `document:review` | Document | Review and approve documents in a workflow. |
+| `variant:show` | Variant | View content type variants. |
+| `variant:manage` | Variant | Create and update variants. |
+| `variant:delete` | Variant | Delete variants. |
+| `flow:show` | Flow | View approval flows and their states. |
+| `flow:manage` | Flow | Create and update flows. |
+| `flow:delete` | Flow | Delete flows. |
+| `role:show` | Role | View roles and their permission sets. |
+| `role:manage` | Role | Create, update, and assign roles. |
+| `role:delete` | Role | Delete roles from the organisation. |
+| `webhook:show` | Webhook | View webhooks and their delivery logs. |
+| `webhook:manage` | Webhook | Create, update, test, and toggle webhooks. |
+| `webhook:delete` | Webhook | Delete webhooks. |
+| `api_key:show` | API Key | View API keys. |
+| `api_key:manage` | API Key | Create and update API keys. |
+| `api_key:delete` | API Key | Delete API keys. |
+| `pipeline:show` | Pipeline | View pipelines and trigger histories. |
+| `pipeline:manage` | Pipeline | Create, update, and manage pipeline stages. |
+| `pipeline:delete` | Pipeline | Delete pipelines and pipe stages. |
+| `form:show` | Form | View forms and form entries. |
+| `form:manage` | Form | Create, update, and configure forms. |
+| `form:delete` | Form | Delete forms. |
+
+<Note>
+  Superadmin accounts bypass permission checks and have access to all resources in their organisation. Custom roles accumulate permissions — a user with multiple roles receives the union of all permissions across those roles.
+</Note>
+
+---
+
+## Full Example: Role Lifecycle
+
+<Steps>
+  <Step title="Create the role">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/roles \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Document Reviewer",
+        "permissions": ["document:show", "document:review", "flow:show"]
+      }'
+    ```
+  </Step>
+  <Step title="Assign the role to a user">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/users/af2cf1c6-f342-4042-8425-6346e9fd6c44/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+      -H "Authorization: Bearer <token>"
+    ```
+  </Step>
+  <Step title="Restrict a content type to this role">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/content_type_roles \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "content_type_id": "12lkjn3490u12",
+        "role_id": "9322d1a5-4f44-463d-b4a5-ce797a029ac2"
+      }'
+    ```
+  </Step>
+  <Step title="Verify the assignment by listing the role">
+    ```bash cURL
+    curl -X GET https://api.wraft.com/api/v1/roles/9322d1a5-4f44-463d-b4a5-ce797a029ac2 \
+      -H "Authorization: Bearer <token>"
+    ```
+  </Step>
+</Steps>

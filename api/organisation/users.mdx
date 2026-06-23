@@ -1,0 +1,567 @@
+---
+title: "Users, Authentication, and Profiles API Reference"
+sidebarTitle: "Users"
+description: "Register users, manage authentication tokens, view and update profiles, search organisation members, and access activity logs and dashboard statistics."
+---
+
+The Users API covers everything from initial account creation through daily authenticated use. Public endpoints handle registration, login, and password management without requiring a token. Authenticated endpoints cover profile management, organisation membership, activity history, and dashboard data. JWT tokens are issued on sign-in and must be included in all authenticated requests.
+
+---
+
+## Authentication
+
+### Sign Up
+
+`POST /api/v1/users/signup`
+
+Registers a new Wraft account. After signup, Wraft sends a verification email to the provided address. The account is not fully active until email verification is complete.
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Full display name. Must be at least 2 characters and contain only letters and spaces (`/^[A-z ]+$/`).
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Email address. Must be unique across all Wraft accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password. Must be 8–64 characters and include at least one uppercase letter, one lowercase letter, one digit, and one special character.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "password": "SecureP@ss1"
+  }'
+```
+
+```json Response
+{
+  "id": "1232148nb3478",
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "email_verify": false,
+  "inserted_at": "2024-02-21T14:00:00Z",
+  "updated_at": "2024-02-21T14:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Sign In
+
+`POST /api/v1/users/signin`
+
+Authenticates a user and returns a JWT access token and a refresh token. The `user` object in the response includes the current organisation, assigned roles, and permissions.
+
+#### Request Body
+
+<ParamField body="email" type="string" required>
+  Registered email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Account password.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="access_token" type="string">
+  Short-lived JWT for authenticating API requests. Include as `Authorization: Bearer <access_token>`.
+</ResponseField>
+<ResponseField name="refresh_token" type="string">
+  Long-lived token for obtaining a new access token when the current one expires.
+</ResponseField>
+<ResponseField name="user" type="object">
+  Authenticated user details.
+  <Expandable title="User fields">
+    <ResponseField name="id" type="string">User UUID.</ResponseField>
+    <ResponseField name="name" type="string">Display name.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="email_verify" type="boolean">Email verification status.</ResponseField>
+    <ResponseField name="organisation_id" type="string">UUID of the user's currently active organisation.</ResponseField>
+    <ResponseField name="roles" type="array">Array of role objects assigned in the current organisation.</ResponseField>
+    <ResponseField name="profile_pic" type="string">URL of the profile picture, if set.</ResponseField>
+    <ResponseField name="profile_pic_thumb" type="string">Thumbnail URL of the profile picture.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/signin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "jane@example.com",
+    "password": "SecureP@ss1"
+  }'
+```
+
+```json Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "1232148nb3478",
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "email_verify": true,
+    "organisation_id": "466f1fa1-9657-4166-b372-21e8135aeaf1",
+    "roles": [{ "id": "756f1fa1-9657-4166-b372-21e8135aeaf1", "name": "editor" }],
+    "profile_pic": "https://storage.wraft.com/users/jane.jpg",
+    "profile_pic_thumb": "https://storage.wraft.com/users/jane_thumb.jpg",
+    "inserted_at": "2024-02-21T14:00:00Z",
+    "updated_at": "2024-02-21T14:00:00Z"
+  }
+}
+```
+</CodeGroup>
+
+---
+
+### Refresh Token
+
+`POST /api/v1/users/token_refresh`
+
+Exchanges a valid refresh token for a new access token and refresh token pair. Use this before the access token expires to maintain a seamless session.
+
+#### Request Body
+
+<ParamField body="token" type="string" required>
+  The refresh token obtained from a previous sign-in or token refresh.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/token_refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }'
+```
+
+```json Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+</CodeGroup>
+
+---
+
+### Check Email Existence
+
+`GET /api/v1/users/check_email`
+
+Checks whether an email address is already registered in Wraft. Useful for client-side validation before presenting the sign-up or sign-in form.
+
+#### Query Parameters
+
+<ParamField query="email" type="string" required>
+  Email address to look up.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/users/check_email?email=jane@example.com"
+```
+
+```json Response (email exists)
+{ "info": "Email Exist!" }
+```
+
+```json Response (not found)
+{ "error": "Email does not exist!" }
+```
+</CodeGroup>
+
+<Note>
+  This endpoint returns a `200 OK` with `info` if the email exists, or `404 Not Found` with `error` if it does not. No authentication token is required.
+</Note>
+
+---
+
+## Password Management
+
+### Generate Password Reset Token
+
+`POST /api/v1/users/password/token`
+
+Sends a password reset email to the provided address. Set `first_time_setup: true` to send a password-set email instead (used when an admin creates an account on behalf of a user).
+
+#### Request Body
+
+<ParamField body="email" type="string" required>Email address of the account.</ParamField>
+<ParamField body="first_time_setup" type="boolean">When `true`, sends a "set your password" email for first-time accounts.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/password/token \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "jane@example.com", "first_time_setup": false }'
+```
+
+```json Response
+{ "info": "Success" }
+```
+</CodeGroup>
+
+---
+
+### Reset Password
+
+`PUT /api/v1/users/password/reset`
+
+Sets a new password using the token from the reset email.
+
+#### Request Body
+
+<ParamField body="token" type="string" required>The password reset token from the email link.</ParamField>
+<ParamField body="password" type="string" required>New password (8–64 characters, must meet strength requirements).</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/users/password/reset \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "reset-token-from-email",
+    "password": "NewSecureP@ss1"
+  }'
+```
+</CodeGroup>
+
+---
+
+### Change Password (Authenticated)
+
+`PUT /api/v1/user/password`
+
+Changes the password of the currently authenticated user. Requires the current password for verification.
+
+#### Request Body
+
+<ParamField body="current_password" type="string" required>The user's current password.</ParamField>
+<ParamField body="password" type="string" required>The new password to set.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/user/password \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "current_password": "OldP@ss1",
+    "password": "NewSecureP@ss2"
+  }'
+```
+</CodeGroup>
+
+---
+
+## Profile
+
+### Get Current User
+
+`GET /api/v1/users/me`
+
+Returns full details for the currently authenticated user, including their organisation, role names, and the list of permissions granted by those roles. Also includes enabled feature flags for the organisation.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/users/me \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "id": "1232148nb3478",
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "email_verify": true,
+  "organisation_id": "466f1fa1-9657-4166-b372-21e8135aeaf1",
+  "roles": [{ "id": "756f1fa1-9657-4166-b372-21e8135aeaf1", "name": "editor" }],
+  "role_names": ["editor"],
+  "permissions": ["document:show", "document:manage", "form:show"],
+  "profile_pic": "https://storage.wraft.com/users/jane.jpg",
+  "profile_pic_thumb": "https://storage.wraft.com/users/jane_thumb.jpg",
+  "inserted_at": "2024-02-21T14:00:00Z",
+  "updated_at": "2024-02-21T14:00:00Z"
+}
+```
+</CodeGroup>
+
+---
+
+### Get Current User Profile
+
+`GET /api/v1/profiles`
+
+Returns the extended profile record for the current user, including date of birth, gender, and profile picture metadata.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/profiles \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+### Update Profile
+
+`PUT /api/v1/profiles`
+
+Updates the current user's profile. Accepts `multipart/form-data` to support profile picture uploads.
+
+#### Request Body (multipart/form-data)
+
+<ParamField body="name" type="string" required>Updated display name.</ParamField>
+<ParamField body="gender" type="string" required>Gender. Free-form string.</ParamField>
+<ParamField body="dob" type="string">Date of birth in `YYYY-MM-DD` format.</ParamField>
+<ParamField body="profile_pic" type="file">Profile picture file to upload.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/profiles \
+  -H "Authorization: Bearer <token>" \
+  -F "name=Jane Smith" \
+  -F "gender=Female" \
+  -F "dob=1990-05-15" \
+  -F "profile_pic=@/path/to/photo.jpg"
+```
+</CodeGroup>
+
+---
+
+### Search Users
+
+`GET /api/v1/users/search`
+
+Searches for users within the current organisation by name. Results are paginated.
+
+#### Query Parameters
+
+<ParamField query="key" type="string">Name search keyword. Performs a partial match.</ParamField>
+<ParamField query="page" type="string">Page number.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/users/search?key=Jane&page=1" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "users": [
+    {
+      "id": "af2cf1c6-f342-4042-8425-6346e9fd6c44",
+      "name": "Jane Smith",
+      "profile_pic": "https://storage.wraft.com/users/jane.jpg",
+      "profile_pic_thumb": "https://storage.wraft.com/users/jane_thumb.jpg"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 1,
+  "total_entries": 1
+}
+```
+</CodeGroup>
+
+---
+
+### Remove a User from the Organisation
+
+`PUT /api/v1/users/:id/remove`
+
+Removes the specified user from the caller's organisation. The caller must have sufficient authority to remove members.
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>UUID of the user to remove.</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X PUT https://api.wraft.com/api/v1/users/af2cf1c6-f342-4042-8425-6346e9fd6c44/remove \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+---
+
+## Activity
+
+### Get Activity Log
+
+`GET /api/v1/activities`
+
+Returns a paginated activity stream of all actions the current user is an audience member of within their organisation. Activity entries include the action type, the affected resource, the actor name, and metadata capturing what changed.
+
+#### Query Parameters
+
+<ParamField query="page" type="string">Page number.</ParamField>
+
+#### Response Fields
+
+<ResponseField name="activities" type="array">
+  List of activity stream entries.
+  <Expandable title="Activity fields">
+    <ResponseField name="action" type="string">Action performed, e.g. `"create"`, `"update"`, `"delete"`.</ResponseField>
+    <ResponseField name="object" type="string">Resource identifier, e.g. `"Layout:1"`.</ResponseField>
+    <ResponseField name="object_details" type="object">Name and ID of the affected resource.</ResponseField>
+    <ResponseField name="meta" type="object">Before/after values for the change.</ResponseField>
+    <ResponseField name="actor" type="string">Display name of the user who performed the action.</ResponseField>
+    <ResponseField name="inserted_at" type="string">ISO 8601 timestamp of the activity.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="page_number" type="integer">Current page.</ResponseField>
+<ResponseField name="total_pages" type="integer">Total pages available.</ResponseField>
+<ResponseField name="total_entries" type="integer">Total activity entries.</ResponseField>
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.wraft.com/api/v1/activities?page=1" \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "activities": [
+    {
+      "action": "create",
+      "object": "Layout:jhg1348561234nkjqwd89",
+      "object_details": { "name": "Standard Contract", "id": "jhg1348561234nkjqwd89" },
+      "meta": { "from": "", "to": { "name": "Standard Contract" } },
+      "actor": "Jane Smith",
+      "inserted_at": "2024-01-21T14:00:00Z"
+    }
+  ],
+  "page_number": 1,
+  "total_pages": 10,
+  "total_entries": 100
+}
+```
+</CodeGroup>
+
+---
+
+## Dashboard
+
+### Get Dashboard Statistics
+
+`GET /api/v1/dashboard_stats`
+
+Returns high-level document statistics for the current organisation: total documents, documents created today, and pending approval counts.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/dashboard_stats \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "total_documents": 432,
+  "daily_documents": 12,
+  "pending_approvals": 5
+}
+```
+</CodeGroup>
+
+---
+
+### Get Documents by Content Type
+
+`GET /api/v1/documents/by_content_type`
+
+Returns the count of documents grouped by content type for the current organisation. Useful for building distribution charts on the dashboard.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/documents/by_content_type \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+[
+  { "content_type": "Offer Letter", "count": 124 },
+  { "content_type": "NDA", "count": 87 },
+  { "content_type": "Employment Contract", "count": 221 }
+]
+```
+</CodeGroup>
+
+---
+
+## Organisation Membership
+
+### List Organisations for Current User
+
+`GET /api/v1/users/organisations`
+
+Returns all organisations the current user belongs to, including name and logo.
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://api.wraft.com/api/v1/users/organisations \
+  -H "Authorization: Bearer <token>"
+```
+
+```json Response
+{
+  "organisations": [
+    { "id": "5c69ce59-5b38-4a63-ab34-17b29d157887", "name": "Acme Corp", "logo": "/logo.jpg" },
+    { "id": "25af23bc-47b4-4560-a1b1-e41b31020733", "name": "Personal", "logo": "/personal.jpg" }
+  ]
+}
+```
+</CodeGroup>
+
+---
+
+### Switch Organisation
+
+`POST /api/v1/users/switch_organisation`
+
+Switches the caller's active organisation context and returns a new token pair scoped to the selected organisation.
+
+#### Request Body
+
+<ParamField body="organisation_id" type="string" required>
+  UUID of the organisation to switch to. The user must already be a member.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/switch_organisation \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "organisation_id": "5c69ce59-5b38-4a63-ab34-17b29d157887" }'
+```
+</CodeGroup>
+
+---
+
+### Join Organisation via Invite Link
+
+`POST /api/v1/users/join_organisation`
+
+Accepts an organisation invitation and adds the authenticated user to that organisation.
+
+#### Request Body
+
+<ParamField body="token" type="string" required>
+  Invite token from the organisation's invitation link.
+</ParamField>
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/users/join_organisation \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "token": "invite-token-from-email" }'
+```
+</CodeGroup>

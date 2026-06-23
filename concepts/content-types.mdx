@@ -1,0 +1,227 @@
+---
+title: "Content Types: Reusable Document Blueprints in Wraft"
+sidebarTitle: "Content Types"
+description: "Learn how Content Types define the schema, fields, layout, theme, and approval flow that every document in your organisation is built from."
+---
+
+Content Types are the foundational building blocks of document production in Wraft. Every document you create — an employment contract, an NDA, an invoice, an offer letter — is an instance of a Content Type. The Content Type defines the document's shape: what fields it contains, which visual layout and theme it uses, and which approval flow governs its lifecycle.
+
+## What Is a Content Type?
+
+A Content Type is a named, organisation-scoped schema that brings together four concerns in one object:
+
+| Concern | What it provides |
+|---|---|
+| **Fields** | The data variables that will be filled in for each document instance |
+| **Layout** | The template markup (Typst or LaTeX) that controls document structure |
+| **Theme** | The visual styling — colors, fonts, and typescale |
+| **Flow** | The approval and review lifecycle the document must pass through |
+
+Every Content Type also carries a **prefix** (2–6 characters, e.g. `EMP`) that is combined with an auto-incremented counter to generate unique document IDs like `EMP0001`. The `type` field distinguishes between `:document` (default) and `:contract` variants, which unlocks additional metadata such as expiry dates on contract instances.
+
+<Note>
+  Content Type names must be unique within an organisation. Attempting to create a second Content Type with the same name returns an error.
+</Note>
+
+## Fields and Validations
+
+Each Content Type can have many **fields**. A field represents one data point that an author fills in when creating a document instance — for example, `employee_name`, `start_date`, or `annual_salary`.
+
+Fields are attached to a Content Type through a **ContentTypeField** join record, which stores additional metadata beyond the field definition itself:
+
+<CardGroup cols={2}>
+  <Card title="order" icon="list-ol">
+    Integer position controlling the display order of fields in the document editor.
+  </Card>
+  <Card title="machine_name" icon="code">
+    A snake_case identifier auto-generated from the field name (e.g. `employee_name`). Used as the variable name inside layout templates.
+  </Card>
+  <Card title="validations" icon="shield-check">
+    An embedded list of validation rules. The `required` rule is managed via the top-level `required` boolean for convenience.
+  </Card>
+  <Card title="meta" icon="brackets-curly">
+    A free-form map for additional field-level metadata used by the rendering engine.
+  </Card>
+</CardGroup>
+
+Validation rules are structured objects. A required validation looks like:
+
+```json
+{
+  "validation": {
+    "rule": "required",
+    "value": true
+  },
+  "error_message": "can't be blank"
+}
+```
+
+Machine names must contain only lowercase letters, numbers, and underscores. If a machine name already exists on the same Content Type, Wraft appends a numeric suffix (`employee_name_1`, `employee_name_2`, etc.) to ensure uniqueness.
+
+## Relationship to Layouts, Themes, and Flows
+
+A Content Type references exactly one Layout, one Theme, and one Flow at a time. These can be changed on an update, but all three are required.
+
+```
+ContentType
+  ├── Layout  →  defines the template structure and rendering engine
+  ├── Theme   →  defines colors, fonts, typescale
+  └── Flow    →  defines the states a document instance passes through
+```
+
+When a document is built (rendered to PDF), Wraft takes the Layout's template, injects the Theme's styling, and substitutes all field `machine_name` variables with the values stored on the document instance.
+
+<Tip>
+  When you update a Content Type's Layout or Flow, all **future** document instances use the new settings. Existing instances retain the layout and state they were created with.
+</Tip>
+
+## API Reference
+
+### Create a Content Type
+
+<CodeGroup>
+
+```http POST /api/v1/content_types
+POST /api/v1/content_types
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json Request body
+{
+  "name": "Employment Contract",
+  "description": "Standard employment contract for full-time employees",
+  "prefix": "EMP",
+  "color": "#4F46E5",
+  "type": "contract",
+  "layout_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "flow_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "theme_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "fields": [
+    {
+      "name": "Employee Name",
+      "field_type_id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "required": true,
+      "order": 1
+    },
+    {
+      "name": "Start Date",
+      "field_type_id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "required": true,
+      "order": 2
+    },
+    {
+      "name": "Annual Salary",
+      "field_type_id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "required": false,
+      "order": 3,
+      "validations": [
+        {
+          "validation": { "rule": "min", "value": 0 },
+          "error_message": "Salary must be a positive number"
+        }
+      ]
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+<ResponseField name="name" type="string" required>
+  Display name for this Content Type. Must be unique within the organisation.
+</ResponseField>
+
+<ResponseField name="prefix" type="string" required>
+  2–6 character string prepended to auto-generated document IDs (e.g. `EMP` → `EMP0001`).
+</ResponseField>
+
+<ResponseField name="layout_id" type="string" required>
+  UUID of the Layout to use when rendering documents.
+</ResponseField>
+
+<ResponseField name="flow_id" type="string" required>
+  UUID of the approval Flow documents under this Content Type will follow.
+</ResponseField>
+
+<ResponseField name="theme_id" type="string" required>
+  UUID of the Theme to apply when rendering documents.
+</ResponseField>
+
+<ResponseField name="fields" type="array">
+  List of field definitions to attach to this Content Type. Each entry must include `name` and `field_type_id`.
+</ResponseField>
+
+### List Content Types
+
+```http
+GET /api/v1/content_types
+```
+
+Supports query parameters:
+
+| Parameter | Description |
+|---|---|
+| `page` | Page number for pagination |
+| `name` | Filter by name (case-insensitive substring match) |
+| `prefix` | Filter by prefix (case-insensitive substring match) |
+| `sort` | `name`, `name_desc`, `inserted_at`, `inserted_at_desc` |
+
+### Search Content Types by Title
+
+```http
+GET /api/v1/content_types/title/search?key=employment
+```
+
+Returns paginated Content Types whose names contain the given search string.
+
+### Show a Content Type
+
+```http
+GET /api/v1/content_types/:id
+```
+
+Returns the full Content Type including its associated Layout (with frame and assets), Theme, Flow with states, and all fields with their field types and validations.
+
+### Update a Content Type
+
+```http
+PUT /api/v1/content_types/:id
+```
+
+Accepts the same body as `create`. Both `name` and `description` are required on update. Constraints between the Layout, Flow, and Theme and the organisation are re-validated.
+
+### Delete a Content Type
+
+<Warning>
+  A Content Type cannot be deleted if any document instances exist under it. Delete all instances first, then retry.
+</Warning>
+
+```http
+DELETE /api/v1/content_types/:id
+```
+
+### Bulk Build Documents
+
+The bulk build endpoint lets you create many document instances at once by uploading a CSV file. Wraft enqueues a background job that processes each row of the CSV and renders a PDF for each one.
+
+```http
+POST /api/v1/content_types/:c_type_id/bulk_build
+Content-Type: multipart/form-data
+```
+
+<ParamField body="state_id" type="string" required>
+  UUID of the initial Flow state to assign to each generated document.
+</ParamField>
+
+<ParamField body="d_temp_id" type="string" required>
+  UUID of the Data Template to use as the base content for each document.
+</ParamField>
+
+<ParamField body="file" type="file" required>
+  CSV file where each row provides field values for one document instance.
+</ParamField>
+
+<ParamField body="mapping" type="object" required>
+  A JSON object mapping CSV column headers to Content Type field machine names.
+</ParamField>

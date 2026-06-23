@@ -1,0 +1,186 @@
+---
+title: "Pipelines: Automated Bulk Document Generation in Wraft"
+sidebarTitle: "Pipelines"
+description: "Connect a Form to a Content Type with a Pipeline to auto-generate documents per form submission, tracking each run with trigger history and stage details."
+---
+
+Pipelines automate document generation at scale. A Pipeline connects a Form (the data source) to one or more Content Type stages (the document templates), so that every time a form entry is submitted, Wraft automatically creates the corresponding document. Trigger histories record the status of every execution, giving you full visibility into what was generated, when, and whether it succeeded.
+
+## What Is a Pipeline?
+
+A Pipeline has a `name`, an `api_route` (the webhook route used to trigger it externally), a `source` (the source type — typically `"form"`), and a `source_id` (the Form UUID that feeds the pipeline). Each pipeline belongs to an organisation and has one or more **Pipe Stages** that define which Content Type and Data Template to use for document generation.
+
+<Note>
+  Pipelines are uniquely named within an organisation. Attempting to create two pipelines with the same name returns a validation error.
+</Note>
+
+## Use Case: Employment Contract Generation
+
+A typical pipeline use case: your HR team uses a Wraft Form to collect new-hire details (name, start date, role, department). You create a Pipeline that watches that form. Each time a form entry is submitted, the pipeline fires — generating a personalised employment contract for each new hire using the **Employment Contract** Content Type and a pre-filled Data Template.
+
+```
+Form Submission
+     │
+     ▼
+ Pipeline (source_id = form.id)
+     │
+     ├── Stage 1: Employment Contract (ContentType) + Standard Offer Template (DataTemplate)
+     └── [additional stages]
+```
+
+## Creating a Pipeline
+
+`POST /api/v1/pipelines`
+
+The `source_id` must be the UUID of an existing Form in your organisation. Stages can be included inline in the create request by providing a `stages` array.
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.wraft.com/api/v1/pipelines \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "New Hire Contract Pipeline",
+    "api_route": "/hooks/new-hire-contracts",
+    "source": "form",
+    "source_id": "form-uuid-here",
+    "stages": [
+      {
+        "content_type_id": "ct-uuid-here",
+        "data_template_id": "dt-uuid-here"
+      }
+    ]
+  }'
+```
+
+```json Response
+{
+  "id": "pipeline-uuid",
+  "name": "New Hire Contract Pipeline",
+  "api_route": "/hooks/new-hire-contracts",
+  "source": "form",
+  "source_id": "form-uuid-here",
+  "stages": [
+    {
+      "id": "stage-uuid",
+      "content_type": { "id": "ct-uuid-here", "name": "Employment Contract" },
+      "data_template": { "id": "dt-uuid-here", "title": "Standard Offer" },
+      "state": null,
+      "form_mapping": null
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+<ParamField body="name" type="string" required>
+  A unique name for the pipeline within your organisation.
+</ParamField>
+
+<ParamField body="api_route" type="string" required>
+  The API route path used to trigger this pipeline externally via webhook.
+</ParamField>
+
+<ParamField body="source" type="string">
+  The source type. Set to `"form"` when using a Wraft Form as the data source.
+</ParamField>
+
+<ParamField body="source_id" type="string">
+  The UUID of the source Form. The pipeline subscribes to this form's entry submissions.
+</ParamField>
+
+<ParamField body="stages" type="array">
+  An optional array of stage objects to create inline. Each stage requires a `content_type_id` and `data_template_id`.
+</ParamField>
+
+## Managing Pipeline Stages
+
+Pipeline Stages define the mapping from a form submission to a document. Each stage references a Content Type (the document shape) and a Data Template (the pre-filled content). Stages are managed at `POST /api/v1/pipe_stages` and linked to the pipeline.
+
+<Steps>
+  <Step title="Create a stage">
+    ```bash cURL
+    curl -X POST https://api.wraft.com/api/v1/pipe_stages \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "pipeline_id": "pipeline-uuid",
+        "content_type_id": "ct-uuid",
+        "data_template_id": "dt-uuid"
+      }'
+    ```
+  </Step>
+  <Step title="Update a stage">
+    ```bash cURL
+    curl -X PUT https://api.wraft.com/api/v1/pipe_stages/:id \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "content_type_id": "new-ct-uuid",
+        "data_template_id": "new-dt-uuid"
+      }'
+    ```
+  </Step>
+  <Step title="Delete a stage">
+    ```bash cURL
+    DELETE /api/v1/pipe_stages/:id
+    ```
+  </Step>
+</Steps>
+
+## Listing and Managing Pipelines
+
+<CardGroup cols={2}>
+  <Card title="List Pipelines" icon="list">
+    `GET /api/v1/pipelines`
+
+    Returns paginated pipelines for your organisation. Filter by `name`, sort by `name`, `name_desc`, `inserted_at`, or `inserted_at_desc`.
+  </Card>
+  <Card title="Show Pipeline" icon="eye">
+    `GET /api/v1/pipelines/:id`
+
+    Returns the pipeline with all stages, including each stage's Content Type fields, Data Template, and Form Mapping.
+  </Card>
+  <Card title="Update Pipeline" icon="pencil">
+    `PUT /api/v1/pipelines/:id`
+
+    Updates name, api_route, source, or source_id. Passing a new `stages` array will add additional stages.
+  </Card>
+  <Card title="Delete Pipeline" icon="trash">
+    `DELETE /api/v1/pipelines/:id`
+
+    Removes the pipeline and all associated FormPipeline links. Requires `pipeline:delete` permission.
+  </Card>
+</CardGroup>
+
+## Trigger Histories
+
+Every time a pipeline executes, Wraft records a Trigger History entry. This captures the input data, response, any errors, start/end times, duration in milliseconds, and a state code.
+
+**Trigger states:**
+
+| State | Description |
+|---|---|
+| `enqued` | Job has been created and is waiting to run |
+| `executing` | Documents are currently being generated |
+| `pending` | Awaiting an external dependency |
+| `partially_completed` | Some stages succeeded, others failed |
+| `success` | All stages completed successfully |
+| `failed` | All stages failed |
+
+```bash cURL
+# List all trigger histories in your organisation
+GET /api/v1/trigger_histories?page=1&sort=inserted_at_desc
+
+# Filter by pipeline name
+GET /api/v1/trigger_histories?pipeline_name=New+Hire
+
+# Filter by status
+GET /api/v1/trigger_histories?status=5
+```
+
+<Tip>
+  Sort trigger histories by `pipeline_name`, `pipeline_name_desc`, `status`, `status_desc`, `inserted_at`, or `inserted_at_desc` to find failed runs quickly.
+</Tip>
